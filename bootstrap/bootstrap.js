@@ -119,6 +119,7 @@ function ensureServiceAccount() {
 	const r = ldapAdd([
 		`dn: ${SVC_DN}`,
 		'objectClass: organizationalRole',
+		'objectClass: simpleSecurityObject',
 		'objectClass: top',
 		'cn: ldapclient',
 		`userPassword: ${pw}`,
