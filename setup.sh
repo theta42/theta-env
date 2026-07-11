@@ -53,8 +53,32 @@ if [[ ! -f .env ]]; then
 	fi
 fi
 
-# shellcheck disable=SC1091
-set -a; source .env; set +a
+# Load .env the same way `docker compose` does — the value is everything after
+# the FIRST '=' on the line — so values with spaces (e.g. `ORG_NAME=My Org`)
+# work identically here and in compose. `source .env` would instead treat
+# `ORG_NAME=My Org` as `ORG_NAME=My` + a `Org` command and abort under errexit.
+# Outer wrapping quotes (single or double) around a value are stripped.
+# Lines that are blank, start with '#', have no '=', or whose key isn't a
+# valid identifier are skipped. No shell expansion/eval is performed on values.
+load_env() {
+	local line key val qc
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		line="${line#"${line%%[![:space:]]*}"}"          # trim leading whitespace
+		[[ -z "$line" || "${line:0:1}" == '#' ]] && continue
+		[[ "$line" == *=* ]] || continue
+		key="${line%%=*}"
+		val="${line#*=}"
+		[[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+		if [[ ${#val} -ge 2 ]]; then
+			qc="${val:0:1}"
+			if { [[ "$qc" == '"' || "$qc" == "'" ]] && [[ "${val: -1}" == "$qc" ]]; }; then
+				val="${val:1:${#val}-2}"
+			fi
+		fi
+		export "$key=$val"
+	done < .env
+}
+load_env
 
 require() { [[ -n "${!1:-}" ]] || die ".env is missing required key: $1"; }
 require LDAP_BASE_DN
@@ -104,6 +128,16 @@ info "  Proxy host:    https://${PROXY_HOST}"
 info "  Admin uid:     ${BOOTSTRAP_ADMIN_UID}"
 
 # ── 2. Start SSO Manager, wait for health ─────────────────────────────────────
+# Compose v2 validates env_file paths for ALL services in the project at load
+# time — including the proxy's ./proxy.env — even when only sso-manager is
+# being started. proxy.env isn't written until step 4 (from the bootstrap
+# output), so create an empty stub here on first run so compose v2 doesn't bail
+# with "env file ./proxy.env not found". The stub carries no vars (a proxy not
+# yet started reads nothing from it); step 4 overwrites it with the real config.
+# (compose v1 only loads env_file for services being started, so this is a
+# no-op there — touch is harmless on an existing, populated proxy.env.)
+touch ./proxy.env
+
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 
@@ -122,10 +156,16 @@ done
 
 # ── 3. Run the bootstrap (writes CLIENT_ID/CLIENT_SECRET/ALREADY_CONFIGURED) ──
 # PROXY_ENV_EXISTS tells the bootstrap whether to rotate the client secret: if
-# proxy.env already exists, keep the existing secret (the proxy can still read
-# it); if not, rotate so a wiped-and-restored proxy gets a usable secret.
+# proxy.env already holds a secret, keep it (the proxy can still read it); if
+# not, rotate so a wiped-and-restored proxy gets a usable secret. We check for
+# an actual app_oidc__clientSecret line rather than mere file existence because
+# step 2 above may have created an empty stub (so compose v2's project-wide
+# env_file validation passes) — a bare stub must NOT suppress first-run client
+# creation or wiped-proxy secret rotation.
 PROXY_ENV_EXISTS=0
-[[ -f ./proxy.env ]] && PROXY_ENV_EXISTS=1
+if [[ -f ./proxy.env ]] && grep -q '^app_oidc__clientSecret=' ./proxy.env; then
+	PROXY_ENV_EXISTS=1
+fi
 
 info "Running bootstrap (creates/updates the LDAP service account, first admin, OAuth client)..."
 BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \

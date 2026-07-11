@@ -1,14 +1,20 @@
 # theta-env
 
-A single repo that runs the whole theta42 identity + access stack —
-[SSO Manager](https://github.com/theta42/sso-manager-node) (OIDC provider + LDAP)
-and the [theta42/proxy](https://github.com/theta42/proxy) (OIDC-protected reverse
-proxy) — together, with one command, for home labs and small businesses.
+The whole theta42 identity + access stack in one repo, brought up with a single
+command — for home labs and small businesses.
 
-It exists for people whose needs are met by these two projects and who want to
-run them "very simply." Each project still works **standalone** (its own
-`docker compose up`); this repo just wires them together and automates the
-first-run glue.
+It wires together two projects that already work on their own:
+
+- **[SSO Manager](https://github.com/theta42/sso-manager-node)** — an OIDC
+  provider with a built-in LDAP directory (OpenLDAP) and a web UI for managing
+  users, groups, and OAuth clients.
+- **[theta42/proxy](https://github.com/theta42/proxy)** — an OIDC-protected
+  reverse proxy (OpenResty) that puts any of your apps behind SSO login and can
+  look users up directly in LDAP.
+
+Each project still runs **standalone** (`docker compose up` in its own folder);
+this repo just composes them and automates the first-run glue so they find each
+other.
 
 ```
             ┌──────────────────────────────────────────────┐
@@ -31,8 +37,70 @@ first-run glue.
 ```
 
 The proxy fronts the SSO Manager UI under TLS and protects it with OIDC login.
-It is **both** an OIDC client of the SSO (for login) **and** a direct LDAP client
-(for user lookups). Legacy apps can still bind to LDAPS on the SSO directly.
+It is **both** an OIDC client of the SSO (for login) **and** a direct LDAP
+client (for user lookups). Legacy apps can still bind to LDAPS on the SSO
+directly.
+
+---
+
+## Before you begin
+
+You'll need three things set up ahead of time — a domain, DNS records, and port
+forwarding. The setup script can't do these for you; they're outside the host.
+
+### 1. A domain you control
+
+You need a real DNS domain (e.g. `lab.example.com`) because the proxy issues
+real TLS certificates for it via Let's Encrypt. A `.local` or made-up name only
+gets you a self-signed cert (browsers will warn — fine for testing, painful for
+daily use).
+
+### 2. At least two hostnames, pointing at your public IP
+
+You need a DNS **`A` record** for each hostname you want the stack to serve,
+all pointing at the **public IP** of the host running this stack (or your
+router, if the host is behind it). At a minimum:
+
+| Hostname (example) | What it serves |
+|--------------------|----------------|
+| `sso.lab.example.com`  | The SSO Manager UI (login, user/group/OAuth-client admin). |
+| `proxy.lab.example.com`| The proxy's own management UI (add the apps you want to protect). |
+
+Two is the **minimum**. You'll almost certainly want **more**: every app you put
+behind the proxy needs *its own* hostname too (e.g. `wiki.lab.example.com`,
+`photos.lab.example.com`). Add those DNS records as you add apps — create them
+now if you already know what you'll front.
+
+> **Quick local test, no DNS?** You can skip real DNS by adding the hostnames
+> to `/etc/hosts` on the machine you browse from, pointing at the stack host.
+> The proxy will then fall back to a self-signed cert. Fine for kicking the
+> tires, not for real use.
+
+### 3. Port forwarding: 80 and 443 to the host
+
+On your router / firewall, forward these from your public IP to the host
+running the stack:
+
+| Port | Why |
+|------|-----|
+| **80** (HTTP)  | Required for Let's Encrypt to verify domain ownership (ACME HTTP-01 challenge). Without it, you get the self-signed fallback. |
+| **443** (HTTPS) | The real traffic — all the UIs and proxied apps. |
+
+Both must reach the host. Port **80 must be reachable from the internet** even
+though you'll only *use* 443 — that's just how Let's Encrypt validates. (If you
+really can't open 80, the stack still runs on the self-signed cert; you'll just
+see browser warnings.)
+
+Optional extra ports (only if you need them):
+- **4443** — alternate HTTPS listener (e.g. if 443 is taken by something else).
+- **636** (LDAPS) — only if a legacy app on another machine binds to LDAP
+  directly over the network. The proxy itself reaches LDAP over the internal
+  Docker network, so you do **not** need to expose 636 for the stack to work.
+
+### 4. Docker + Docker Compose
+
+Any recent Docker with Compose — the v2 plugin (`docker compose`) or the v1
+standalone (`docker-compose`) both work.
 
 ---
 
@@ -62,9 +130,6 @@ cp .env.example .env        # then edit .env (see below)
 4. Builds + starts the proxy container, waits for it to be healthy.
 5. Prints your first admin login + the public URLs.
 
-You need **Docker** + **Docker Compose** (v2 plugin `docker compose` or v1
-standalone `docker-compose` both work).
-
 ### `.env` — the values you must set
 
 Copy `.env.example` to `.env` and at minimum set:
@@ -78,18 +143,15 @@ Copy `.env.example` to `.env` and at minimum set:
 | `PROXY_HOST` | Public hostname the proxy serves its own mgmt UI at, e.g. `proxy.lab.local`. |
 | `BOOTSTRAP_ADMIN_UID` / `BOOTSTRAP_ADMIN_PASS` | Your first admin login. Re-running `setup.sh` resets this password. |
 
+> **Values with spaces:** quote them, e.g. `ORG_NAME="My Org"` or
+> `SMTP_FROM="Theta SSO <noreply@example.com>"`. Quotes are optional but
+> recommended anywhere a value contains spaces — `setup.sh` and `docker
+> compose` both strip a single pair of matching outer quotes.
+
 Optional: `BOOTSTRAP_ADMIN_EMAIL`, `LDAP_SERVICE_PASS` (auto-generated if blank),
 `SMTP_*` (for SSO password-reset/invite emails), and host port overrides
 (`SSO_PORT`, `LDAPS_PORT`, `HTTP_PORT`, `HTTPS_PORT`, `HTTPS_ALT_PORT`,
 `MGMT_PORT`). See `.env.example` for the full list with comments.
-
-### DNS
-
-`SSO_HOST` and `PROXY_HOST` must resolve to the host running the stack. On a
-real network, add DNS records; for a quick local try, add them to `/etc/hosts`
-pointing at the host. The proxy auto-issues Let's Encrypt certs when port **80**
-is reachable from the internet; on a LAN without that, it serves a self-signed
-fallback cert (browsers will warn — that's expected for home-lab use).
 
 ---
 
