@@ -1,0 +1,6 @@
+[submodule "sso-manager-node"]
+	path = sso-manager-node
+	url = https://github.com/theta42/sso-manager-node.git
+[submodule "proxy"]
+	path = proxy
+	url = https://github.com/theta42/proxy.git

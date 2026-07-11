@@ -1,0 +1,7 @@
+# Local deployment config — contains secrets (LDAP_ADMIN_PASS, JWT_SECRET,
+# OAuth client secret, LDAP service password). Never commit.
+.env
+proxy.env
+
+# Docker Compose runtime artifacts
+*.log

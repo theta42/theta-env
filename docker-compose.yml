@@ -1,0 +1,103 @@
+# theta-env — unified SSO Manager + Proxy.
+#
+# Brings up the two all-in-one images on one bridge network so the proxy can
+# reach the SSO internally (http://sso-manager:3001 for token/userinfo,
+# ldaps://sso-manager:636 for LDAP) without exposing the SSO's HTTP port to
+# the internet. The proxy is the public front (80/443); the SSO sits behind it.
+#
+# Each project builds from its git submodule:
+#   ./sso-manager-node  -> Dockerfile.openldap (app + OpenLDAP + Redis)
+#   ./proxy              -> Dockerfile          (OpenResty + app + Redis)
+# So `git clone --recursive` is required to get the submodules first.
+#
+# First-run wiring (LDAP service account, first admin, OAuth client, proxy
+# config) is automated by ./setup.sh, which runs bootstrap/bootstrap.js inside
+# the sso-manager container and writes ./proxy.env (the proxy's env_file).
+
+services:
+  sso-manager:
+    build:
+      context: ./sso-manager-node
+      dockerfile: Dockerfile.openldap
+    container_name: sso-manager
+    restart: unless-stopped
+    networks: [theta-net]
+    ports:
+      # SSO web UI — bind to localhost only (first-run / admin convenience). In
+      # normal use the proxy fronts it at https://<SSO_HOST>; don't expose 3001
+      # to the LAN. Set SSO_PORT=0 in .env to still map (random) or firewall it.
+      - "127.0.0.1:${SSO_PORT:-3001}:3001"
+      # LDAPS for EXTERNAL direct-LDAP clients (legacy apps). The proxy itself
+      # reaches LDAPS over theta-net (sso-manager:636) without this host mapping.
+      - "${LDAPS_PORT:-636}:636"
+      # Plain LDAP (389) is NOT mapped — direct-LDAP clients should use LDAPS.
+    environment:
+      - LDAP_BASE_DN=${LDAP_BASE_DN:-dc=example,dc=com}
+      - LDAP_DOMAIN=${LDAP_DOMAIN:-}
+      - LDAP_ADMIN_PASS=${LDAP_ADMIN_PASS:-admin}
+      - ORG_NAME=${ORG_NAME:-SSO Manager}
+      - LDAP_CERT_CN=${LDAP_CERT_CN:-}
+      - app_oauth__jwtSecret=${JWT_SECRET}
+      # OIDC issuer = the browser-facing URL the proxy serves the SSO at.
+      - app_oauth__issuer=https://${SSO_HOST}
+      - app_name=${ORG_NAME:-SSO Manager}
+      - app_smtp__host=${SMTP_HOST:-}
+      - app_smtp__port=${SMTP_PORT:-587}
+      - app_smtp__user=${SMTP_USER:-}
+      - app_smtp__pass=${SMTP_PASS:-}
+      - app_smtp__from=${SMTP_FROM:-}
+      - NODE_ENV=production
+      - NODE_PORT=3001
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-certs:/etc/openldap/certs
+      # Bind-mount the bootstrap script so `docker compose exec sso-manager node
+      # /bootstrap/bootstrap.js` can run it (read-only).
+      - ./bootstrap:/bootstrap:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    container_name: proxy
+    restart: unless-stopped
+    networks: [theta-net]
+    depends_on:
+      sso-manager:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_ALT_PORT:-4443}:4443"
+      # Management UI/API — localhost only (the front proxies it under TLS in
+      # normal use; exposed on localhost for first-run setup / healthcheck).
+      - "127.0.0.1:${MGMT_PORT:-3000}:3000"
+    # Written by setup.sh from .env + the bootstrap output (OAuth client creds).
+    # setup.sh creates it before starting the proxy, so it always exists.
+    env_file:
+      - ./proxy.env
+    volumes:
+      - proxy-cache:/var/cache/nginx/proxy
+      - proxy-logs:/var/log/nginx
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  theta-net:
+    driver: bridge
+
+volumes:
+  ldap-data:
+  ldap-certs:
+  proxy-cache:
+  proxy-logs:
