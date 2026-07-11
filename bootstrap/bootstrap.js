@@ -39,7 +39,10 @@ const BIND_DN    = `cn=admin,${BASE_DN}`;
 const LDAP_URL   = 'ldap://localhost:389';
 
 const ADMIN_UID   = process.env.BOOTSTRAP_ADMIN_UID   || 'admin';
-const ADMIN_PASS  = process.env.BOOTSTRAP_ADMIN_PASS  || 'admin';
+// The first admin *user's* password (cn=<uid>,ou=people,<base>). Distinct from
+// ADMIN_PASS above, which is the LDAP *root* (cn=admin,<base>) bind password
+// from LDAP_ADMIN_PASS — two different accounts, two different secrets.
+const ADMIN_USER_PASS = process.env.BOOTSTRAP_ADMIN_PASS || 'admin';
 const ADMIN_EMAIL = process.env.BOOTSTRAP_ADMIN_EMAIL || '';
 const SVC_PASS    = process.env.LDAP_SERVICE_PASS || 'service';
 
@@ -126,7 +129,7 @@ function ensureServiceAccount() {
 
 // ── 2. First admin user ─────────────────────────────────────────────────────
 function ensureAdmin() {
-	const pw = hashPasswordSSHA512(ADMIN_PASS);
+	const pw = hashPasswordSSHA512(ADMIN_USER_PASS);
 	if (entryExists(ADMIN_DN)) {
 		log(`Admin ${ADMIN_DN} exists — resetting password to .env and ensuring groups`);
 		ldapModify([
@@ -177,7 +180,7 @@ async function login() {
 	const res = await fetch(`${SSO_INTERNAL}/api/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ uid: ADMIN_UID, password: ADMIN_PASS }),
+		body: JSON.stringify({ uid: ADMIN_UID, password: ADMIN_USER_PASS }),
 	});
 	if (!res.ok) {
 		const text = await res.text().catch(() => '');
