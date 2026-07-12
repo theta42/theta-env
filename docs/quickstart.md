@@ -142,6 +142,10 @@ docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf \
 
 - Add users / groups in the SSO UI.
 - Add Host records in the proxy UI to protect your apps with OIDC.
+- **Mint API tokens** to drive either app's management API from scripts/CI:
+  under **API Tokens** in each UI, mint a personal access token and use it as
+  `Authorization: Bearer sso_…` (SSO) or `prx_…` (proxy). A token authenticates as
+  its creator with their permissions. See each submodule's DEPLOYMENT.
 - See [Architecture](architecture.html) for how it all fits together, and
   [Standalone](standalone.html) to run either project on its own.
 

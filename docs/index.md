@@ -38,6 +38,11 @@ together, and [Standalone](standalone.html) for running each project on its own.
   with OIDC login.
 - **LDAPS** at `ldaps://<host>:636` — legacy apps can bind directly (admin or
   the read-only `cn=ldapclient` service account the bootstrap creates).
+- **API tokens** — both apps let any logged-in user mint self-service personal
+  access tokens (`Authorization: Bearer sso_…` / `prx_…`) to drive the management
+  API from scripts/CI without a browser session. A token authenticates as its
+  creator (carrying their permissions); mint/rotate/revoke under **API Tokens**
+  in each UI. See each submodule's DEPLOYMENT for the details.
 
 ## The `./config/` values you must set
 
