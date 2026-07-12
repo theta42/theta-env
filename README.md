@@ -176,6 +176,30 @@ full annotated shape, and each submodule's `secrets.js.example`.
   `cn=admin,<base>` (admin) or `cn=ldapclient,ou=people,<base>` (read-only
   service account the bootstrap created). Use LDAPS, not plain LDAP.
 
+### API tokens (personal access tokens)
+
+Both apps support **self-service personal access tokens** for calling their
+management APIs from scripts/CI/other services without an OIDC browser session.
+Each logged-in user mints their own tokens under **API Tokens** in the UI
+(the raw token is shown once); a token authenticates **as its creator** and
+carries their permissions. Revoke or rotate from the same page (immediate
+effect). Tokens persist in Redis (AOF) and survive rebuilds.
+
+```bash
+# SSO Manager — manage users/groups/OAuth clients from a script
+curl -H "Authorization: Bearer sso_<id>_<secret>" https://<SSO_HOST>/api/user
+
+# Proxy — manage Host records from a script
+curl -H "Authorization: Bearer prx_<id>_<secret>" https://<PROXY_HOST>/api/host
+```
+
+Format is `<prefix>_<id>_<secret>`; the `id` is the lookup key, the `secret` is
+bcrypt-hashed and never stored in plaintext. In the proxy, the creator's group
+membership is snapshotted at mint time (revoke + re-mint to tighten after group
+changes); the SSO re-resolves groups from LDAP live on each call. See each
+submodule's DEPLOYMENT (`sso-manager-node/DEPLOYMENT.md`, `proxy/DEPLOYMENT.md`)
+for details.
+
 ---
 
 ## Logs
