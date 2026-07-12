@@ -158,10 +158,11 @@ Optional: `BOOTSTRAP_ADMIN_EMAIL`, `LDAP_SERVICE_PASS` (auto-generated if blank)
 ## After setup
 
 - **SSO Manager UI**: `https://<SSO_HOST>` — log in as your bootstrap admin to
-  add users, groups, and OAuth clients. (First-run fallback:
-  `http://127.0.0.1:3001`.)
+  add users, groups, and OAuth clients. (First-run fallback: `http://<host>:3001`,
+  reachable on the LAN by default.)
 - **Proxy mgmt UI**: `https://<PROXY_HOST>` — add the Host records you want to
-  protect with OIDC. (First-run fallback: `http://127.0.0.1:3000`.)
+  protect with OIDC. (First-run fallback: `http://<host>:3000`, reachable on the
+  LAN by default.)
 - **Direct LDAP for legacy apps**: bind to `ldaps://<host>:636` as
   `cn=admin,<base>` (admin) or `cn=ldapclient,ou=people,<base>` (read-only
   service account the bootstrap created). Use LDAPS, not plain LDAP.
@@ -230,9 +231,13 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 
 ## Security notes
 
-1. **Only expose 443 (and optionally 4443) to the internet.** The SSO's web port
-   (`3001`) is bound to localhost — the proxy fronts it. LDAPS (`636`) is the
-   only LDAP listener that should cross the network.
+1. **Only expose 443 (and optionally 4443) to the internet.** The SSO web port
+   (`3001`) and the proxy mgmt UI (`3000`) default to `0.0.0.0` for first-run
+   convenience, so they're reachable on your LAN (they're login-protected, but
+   it widens the attack surface). The proxy fronts both under TLS in normal
+   use, so set `SSO_BIND=127.0.0.1` and `MGMT_BIND=127.0.0.1` in `.env` to lock
+   them to the host once you're up and running. LDAPS (`636`) is the only LDAP
+   listener that should cross the network.
 2. **Persist + protect `.env` and `proxy.env`.** They hold `LDAP_ADMIN_PASS`,
    `JWT_SECRET`, the LDAP service password, and the OAuth client secret.
    `setup.sh` writes `proxy.env` mode `0600`; both are in `.gitignore`.
