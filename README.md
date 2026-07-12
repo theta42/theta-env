@@ -109,49 +109,58 @@ standalone (`docker-compose`) both work.
 ```bash
 git clone --recursive https://github.com/theta42/theta-env.git
 cd theta-env
-cp .env.example .env        # then edit .env (see below)
-./setup.sh
+./setup.sh            # generates ./config/ the first time — edit it, then re-run
+./setup.sh            # builds + bootstraps + starts the stack
 ```
 
-`./setup.sh` is idempotent — re-run it any time to converge the stack to your
-`.env`. It:
+The first `./setup.sh` generates `./config/sso-secrets.js` +
+`./config/proxy-secrets.js` with random secrets and **exits**, telling you to
+edit them. Set at least `stack.ssoHost`, `stack.proxyHost`, `stack.ldapBaseDn`,
+and `bootstrap.adminUid`/`adminPass` in `sso-secrets.js`, then re-run. The second
+run builds and brings up the stack.
 
-1. Builds + starts the SSO Manager container, waits for it to be healthy.
-2. Runs the bootstrap (`bootstrap/bootstrap.js`) **inside** the SSO container,
+`./setup.sh` is idempotent — re-run it any time to converge the stack to
+`./config/`. It:
+
+1. Snapshots state to `./backups/<timestamp>/` before rebuilding (config + LDAP
+   + both Redis) — a no-op on the very first run.
+2. Builds + starts the SSO Manager container, waits for it to be healthy.
+3. Runs the bootstrap (`bootstrap/bootstrap.js`) **inside** the SSO container,
    which:
    - creates the LDAP service account the proxy binds as
      (`cn=ldapclient,ou=people,<base>`),
    - creates your first admin user and adds them to the `app_sso_admin` +
      `app_sso_oauth_admin` groups,
-   - registers the proxy as an OIDC client in the SSO, and
-   - prints the client id + secret.
-3. Writes `./proxy.env` (the proxy's config — OIDC endpoints, LDAP bind,
-   client creds) from your `.env` + the bootstrap output.
+   - registers the proxy as an OIDC client in the SSO and **writes the generated
+     client id + secret back into `./config/proxy-secrets.js`**.
 4. Builds + starts the proxy container, waits for it to be healthy.
 5. Prints your first admin login + the public URLs.
 
-### `.env` — the values you must set
+### Configuration — `./config/` (no `.env` files)
 
-Copy `.env.example` to `.env` and at minimum set:
+All config and secrets live in a bind-mounted `./config/` directory (gitignored),
+read by each app's `@simpleworkjs/conf` from a symlinked `secrets.js`:
 
-| Key | What it is |
-|-----|------------|
-| `LDAP_BASE_DN` | Your directory base, e.g. `dc=lab,dc=local`. |
-| `LDAP_ADMIN_PASS` | The LDAP root password. **Save it** — needed for raw LDAP admin. |
-| `JWT_SECRET` | Signs the SSO's access/refresh tokens. Leave blank to auto-generate + persist. **Save it.** |
-| `SSO_HOST` | Public hostname the proxy serves the SSO UI at, e.g. `sso.lab.local`. |
-| `PROXY_HOST` | Public hostname the proxy serves its own mgmt UI at, e.g. `proxy.lab.local`. |
-| `BOOTSTRAP_ADMIN_UID` / `BOOTSTRAP_ADMIN_PASS` | Your first admin login. Re-running `setup.sh` resets this password. |
+- **`./config/sso-secrets.js`** — SSO config: `ldap` (base, admin password,
+  user/group bases), `oauth` (issuer, `jwtSecret`), `smtp`, `name`, plus
+  orchestrator-only `stack` (hostnames, base DN), `bootstrap` (first admin),
+  and `serviceAccountPass` (the proxy's LDAP bind password).
+- **`./config/proxy-secrets.js`** — proxy config: `oidc` (endpoints,
+  `clientId`/`clientSecret` — filled in by the bootstrap), `ldap` (bind creds,
+  same `serviceAccountPass`), `auth` (admin groups/users).
 
-> **Values with spaces:** quote them, e.g. `ORG_NAME="My Org"` or
-> `SMTP_FROM="Theta SSO <noreply@example.com>"`. Quotes are optional but
-> recommended anywhere a value contains spaces — `setup.sh` and `docker
-> compose` both strip a single pair of matching outer quotes.
+`./setup.sh` generates both on first run with random secrets. There is **no
+`.env` / `proxy.env`** — edit `./config/*.js` directly. Compose only interpolates
+port defaults (`SSO_PORT`, `HTTP_PORT`, etc.), which you can override on the
+command line: `SSO_BIND=127.0.0.1 ./setup.sh`. See `config.example/` for the
+full annotated shape, and each submodule's `secrets.js.example`.
 
-Optional: `BOOTSTRAP_ADMIN_EMAIL`, `LDAP_SERVICE_PASS` (auto-generated if blank),
-`SMTP_*` (for SSO password-reset/invite emails), and host port overrides
-(`SSO_PORT`, `LDAPS_PORT`, `HTTP_PORT`, `HTTPS_PORT`, `HTTPS_ALT_PORT`,
-`MGMT_PORT`). See `.env.example` for the full list with comments.
+> **Migrating from an older `.env`-based deployment?** If `.env` and/or
+> `proxy.env` exist when you first run `./setup.sh`, it migrates them into
+> `./config/` **preserving your existing secrets** (LDAP admin pass, JWT, OAuth
+> client creds, service pass) so your running deployment keeps its directory,
+> tokens, and OAuth client. Afterwards `.env`/`proxy.env` are dead weight —
+> delete them.
 
 ---
 
@@ -211,23 +220,93 @@ slapd runs with `-d 0` and logs to stderr, so LDAP output is already in
 SSO and query the directory directly:
 
 ```bash
+# Your base DN lives in ./config/sso-secrets.js (stack.ldapBaseDn).
 docker compose exec sso-manager ldapsearch -x -H ldap://localhost:389 \
-  -D "cn=admin,${LDAP_BASE_DN}" -W -b "${LDAP_BASE_DN}"
+  -D "cn=admin,<base>" -W -b "<base>"
 ```
 
 ---
 
-## Backups
+## Backups and restore
 
-The directory lives in the `ldap-data` Docker volume. Back it up with `slapcat`
-(the portable LDIF export — survives OpenLDAP version upgrades):
+`./setup.sh` automatically snapshots state to `./backups/<timestamp>/` **before
+every rebuild** and keeps the last `BACKUP_KEEP` (default 5; e.g.
+`BACKUP_KEEP=10 ./setup.sh`). Each snapshot has `config/` (your secrets),
+`ldap.ldif` (the directory), and `sso-manager.rdb` + `proxy.rdb` (Redis). Back
+the `./backups/` directory **off the host** — it holds secrets and the whole
+user directory.
+
+### What lives where
+
+| State | Location | Persisted across rebuild? |
+|-------|----------|---------------------------|
+| LDAP directory (users, groups, policies) | `ldap-data` volume | yes (volume) |
+| SSO Redis (OAuth clients, tokens) | `sso-data` volume | yes (AOF + RDB) |
+| Proxy Redis (Host records, perms, DNS creds, LE certs) | `proxy-data` volume | yes (AOF + RDB) |
+| Secrets (LDAP admin pass, JWT, OAuth client, service pass) | `./config/` | your responsibility — back up off-host |
+
+### Manual backup
 
 ```bash
-docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf -b "$LDAP_BASE_DN" > backup.ldif
+# LDAP (while slapd is running)
+docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf \
+  -b "$(docker compose exec -T sso-manager node -e 'console.log((require("/config/sso-secrets.js").stack||{}).ldapBaseDn)')" > ldap.ldif
+
+# Redis — hot snapshot each service
+docker compose exec sso-manager redis-cli BGSAVE
+docker compose cp sso-manager:/data/dump.rdb sso-manager.rdb
+docker compose exec proxy redis-cli BGSAVE
+docker compose cp proxy:/data/dump.rdb proxy.rdb
+
+# Secrets
+cp -a ./config config-backup && chmod 700 config-backup
 ```
 
-Restore is `ldapadd`/`ldapmodify` from that LDIF into a fresh directory. Also
-keep your `.env` (it holds `LDAP_ADMIN_PASS` + `JWT_SECRET`) and `proxy.env`.
+### Restore — full disaster recovery
+
+```bash
+# 1. Secrets
+cp -a backups/<ts>/config ./config && chmod 700 ./config
+./setup.sh                       # fresh empty volumes
+docker compose stop sso-manager
+
+# 2. LDAP — the SSO uses a static slapd.conf (-f, not cn=config -F), so use slapadd -f
+docker compose run --rm --no-deps --entrypoint sh sso-manager -c \
+  'rm -f /var/lib/ldap/* && slapadd -f /etc/openldap/slapd.conf -l /dev/stdin' \
+  < backups/<ts>/ldap.ldif
+docker compose start sso-manager
+
+# 3. Redis — delete the AOF first (see note), then load the RDB
+for svc in sso-manager proxy; do
+  docker compose stop "$svc"
+  docker compose run --rm --no-deps --entrypoint sh "$svc" -c \
+    'rm -f /data/appendonly.aof /data/appendonly.aof.*'
+  docker compose cp "backups/<ts>/${svc}.rdb" "${svc}:/data/dump.rdb"
+  docker compose start "$svc"
+done
+```
+
+> **AOF vs RDB (important):** with `--appendonly yes`, Redis loads
+> `appendonly.aof` on startup and **ignores** `dump.rdb` if the AOF exists. To
+> restore from an RDB snapshot you **must delete the AOF first** (step 3 does
+> this); Redis then loads the RDB and writes a fresh AOF. Verify after restoring:
+> `docker compose exec sso-manager redis-cli DBSIZE`,
+> `docker compose exec proxy redis-cli DBSIZE`,
+> `docker compose exec sso-manager ldapsearch -x -b "<base>"`.
+
+Restore **Redis only** = step 3. Restore **LDAP only** = step 2.
+
+### Upgrades
+
+```bash
+git pull --ff-only
+./setup.sh          # snapshots, then rebuilds — volumes keep LDAP + Redis state
+```
+LDAP, both Redis stores, and the auto-ssl Let's Encrypt certs (in proxy Redis)
+all survive the rebuild because they live on named volumes, not in the images.
+Note: re-running bootstrap resets the bootstrap-admin and service-account
+passwords to the `./config/` values; non-bootstrap OAuth clients live in SSO
+Redis and are preserved by the volume.
 
 ---
 
@@ -238,15 +317,16 @@ The two submodules work on their own — this repo just composes them:
 - **SSO Manager alone**:
   ```bash
   cd sso-manager-node
-  cp secrets.js.example nodejs/conf/secrets.js   # edit it
+  mkdir -p config && cp secrets.js.example config/sso-secrets.js   # edit it
   docker compose up -d --build
   ```
   See its [DEPLOYMENT.md](sso-manager-node/DEPLOYMENT.md).
 
-- **Proxy alone** (pointing at any external SSO + LDAP via `app_*` env or a
-  mounted `secrets.js`):
+- **Proxy alone** (pointing at any external SSO + LDAP via a mounted
+  `secrets.js`):
   ```bash
   cd proxy
+  mkdir -p config && cp secrets.js.example config/proxy-secrets.js   # edit it
   docker compose up -d --build
   ```
   See its [DEPLOYMENT.md](proxy/DEPLOYMENT.md).
@@ -260,17 +340,23 @@ composition (one compose file + one bootstrap script).
 
 `bootstrap/bootstrap.js` runs inside the SSO Manager container (bind-mounted
 read-only from this repo) and is deliberately self-contained: it uses only Node
-built-ins (`child_process`, `crypto`) + global `fetch`. LDAP operations use the
-`openldap-clients` binaries (`ldapadd`/`ldapsearch`/`ldapmodify`) with explicit
-admin creds from `.env`; the OAuth client is created via the SSO's own HTTP API
-(logging in as the bootstrapped admin, which also validates that admin's
-password end-to-end). It does **not** `require` the SSO's internal models, so it
-never has to fight the app's config layer.
+built-ins (`child_process`, `crypto`, `fs`) + global `fetch`. It reads its inputs
+from the bind-mounted `./config/sso-secrets.js` + `proxy-secrets.js` (not from
+env). LDAP operations use the `openldap-clients` binaries
+(`ldapadd`/`ldapsearch`/`ldapmodify`) with explicit admin creds from the config;
+the OAuth client is created via the SSO's own HTTP API (logging in as the
+bootstrapped admin, which also validates that admin's password end-to-end). It
+does **not** `require` the SSO's internal models, so it never has to fight the
+app's config layer.
 
-It's idempotent: re-running converges to your `.env` values. The LDAP service
-account + admin passwords are reset to `.env` on each run; the OAuth client is
-created if missing, left alone if `proxy.env` is present, or rotated if
-`proxy.env` was lost (so a wiped-and-restored proxy gets a secret it can read).
+It's idempotent: re-running converges to your `./config/` values. The LDAP
+service account + admin passwords are reset to the config on each run; the OAuth
+client is created if missing. If `proxy-secrets.js` already holds a
+`clientId`+`clientSecret` matching an existing client, they are kept (the proxy
+keeps working); otherwise a new client is created (or the secret rotated if the
+client exists but the file has no usable secret) and the creds are written back
+into `proxy-secrets.js` (the SSO mounts `./config` read-write for this; the proxy
+mounts it read-only).
 
 Passwords are stored as `{SSHA512}` (the SSO's `hashPasswordSSHA512`, replicated
 exactly in the bootstrap) so the SSO can verify them on bind.
@@ -283,20 +369,22 @@ exactly in the bootstrap) so the SSO can verify them on bind.
    (`3001`) and the proxy mgmt UI (`3000`) default to `0.0.0.0` for first-run
    convenience, so they're reachable on your LAN (they're login-protected, but
    it widens the attack surface). The proxy fronts both under TLS in normal
-   use, so set `SSO_BIND=127.0.0.1` and `MGMT_BIND=127.0.0.1` in `.env` to lock
-   them to the host once you're up and running. LDAPS (`636`) is the only LDAP
-   listener that should cross the network.
-2. **Persist + protect `.env` and `proxy.env`.** They hold `LDAP_ADMIN_PASS`,
-   `JWT_SECRET`, the LDAP service password, and the OAuth client secret.
-   `setup.sh` writes `proxy.env` mode `0600`; both are in `.gitignore`.
+   use, so set `SSO_BIND=127.0.0.1` and `MGMT_BIND=127.0.0.1` to lock them to the
+   host once you're up and running (override on the command line, e.g.
+   `SSO_BIND=127.0.0.1 MGMT_BIND=127.0.0.1 ./setup.sh`). LDAPS (`636`) is the
+   only LDAP listener that should cross the network.
+2. **Protect `./config/`.** It holds the LDAP admin password, JWT secret, LDAP
+   service password, and OAuth client secret. `setup.sh` writes the files mode
+   `0600` and the dir `0700`; the directory is in `.gitignore`. Back it up
+   off-host (see *Backups and restore*).
 3. **LDAPS uses the SSO's self-signed cert by default.** The proxy binds with
-   `app_ldap__tlsOptions__rejectUnauthorized=false`. For strict trust, mount
-   the SSO's cert (`ldap-certs` volume) into the proxy and set
-   `app_ldap__tlsOptions__ca=<path>` in `proxy.env`.
+   `ldap.tlsOptions.rejectUnauthorized=false` (in `proxy-secrets.js`). For strict
+   trust, mount the SSO's cert (`ldap-certs` volume) into the proxy and set
+   `ldap.tlsOptions.ca=<path>` in `./config/proxy-secrets.js`.
 4. **Re-running `setup.sh` resets the bootstrap admin + service passwords to
-   `.env`.** If you change a user's password in the SSO UI later, re-running
-   `setup.sh` will reset the bootstrap admin's password back to
-   `BOOTSTRAP_ADMIN_PASS`.
+   the `./config/` values.** If you change a user's password in the SSO UI
+   later, re-running `setup.sh` will reset the bootstrap admin's password back
+   to `bootstrap.adminPass`.
 5. Both containers run their app process as root (matching the bare-metal
    systemd units) for simplicity at this scale. Harden to a non-root user for
    a stricter deployment.
@@ -307,14 +395,18 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 
 ```
 theta-env/
-├── .env.example          # copy to .env, edit
-├── docker-compose.yml    # sso-manager + proxy on one bridge net
-├── setup.sh              # one-command idempotent bring-up
+├── config.example/      # committed annotated config templates (copy to ./config/)
+├── docker-compose.yml   # sso-manager + proxy on one bridge net
+├── setup.sh             # one-command idempotent bring-up (manages ./config/ + backups)
 ├── bootstrap/
 │   └── bootstrap.js      # runs in the sso-manager container
-├── sso-manager-node/     # git submodule
-└── proxy/                # git submodule
+├── sso-manager-node/    # git submodule
+└── proxy/               # git submodule
 ```
+
+`./setup.sh` generates the gitignored `./config/` (`sso-secrets.js` +
+`proxy-secrets.js`) on first run and snapshots to the gitignored `./backups/`
+before each rebuild.
 
 `./setup.sh` updates both submodules to the latest of their tracked remote
 branch before building, so each run builds current upstream — no manual
