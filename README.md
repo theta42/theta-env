@@ -169,6 +169,54 @@ Optional: `BOOTSTRAP_ADMIN_EMAIL`, `LDAP_SERVICE_PASS` (auto-generated if blank)
 
 ---
 
+## Logs
+
+The stack runs under Docker Compose with two services — `sso-manager` and
+`proxy`. Both the Node app and, for the SSO, OpenLDAP write to the container's
+stdout/stderr, so `docker compose logs` is the primary view.
+
+```bash
+# Follow both services live
+docker compose logs -f
+
+# One service
+docker compose logs -f sso-manager
+docker compose logs -f proxy
+
+# Last 200 lines and keep following
+docker compose logs --tail=200 -f proxy
+
+# Only the last 10 minutes
+docker compose logs --since=10m sso-manager
+```
+
+The plain container names work too (`docker logs -f sso-manager`,
+`docker logs -f proxy`) — handy if you started the stack without Compose.
+
+### Proxy nginx access/error logs
+
+OpenResty writes its access/error logs to files inside the container
+(`/var/log/nginx`, on the `proxy-logs` volume), so they do **not** appear in
+`docker logs proxy`. Tail them directly:
+
+```bash
+docker compose exec proxy tail -f /var/log/nginx/access.log
+docker compose exec proxy tail -f /var/log/nginx/error.log
+```
+
+### SSO / LDAP logs
+
+slapd runs with `-d 0` and logs to stderr, so LDAP output is already in
+`docker compose logs sso-manager`. For a targeted health check, exec into the
+SSO and query the directory directly:
+
+```bash
+docker compose exec sso-manager ldapsearch -x -H ldap://localhost:389 \
+  -D "cn=admin,${LDAP_BASE_DN}" -W -b "${LDAP_BASE_DN}"
+```
+
+---
+
 ## Backups
 
 The directory lives in the `ldap-data` Docker volume. Back it up with `slapcat`
