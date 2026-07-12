@@ -23,10 +23,10 @@ services:
     restart: unless-stopped
     networks: [theta-net]
     ports:
-      # SSO web UI — bind to localhost only (first-run / admin convenience). In
-      # normal use the proxy fronts it at https://<SSO_HOST>; don't expose 3001
-      # to the LAN. Set SSO_PORT=0 in .env to still map (random) or firewall it.
-      - "127.0.0.1:${SSO_PORT:-3001}:3001"
+      # SSO web UI. Bind address is configurable via SSO_BIND (default 0.0.0.0 so
+      # the UI is reachable on the LAN during setup). Set SSO_BIND=127.0.0.1 in
+      # .env to lock it to localhost once the proxy fronts it at https://<SSO_HOST>.
+      - "${SSO_BIND:-0.0.0.0}:${SSO_PORT:-3001}:3001"
       # LDAPS for EXTERNAL direct-LDAP clients (legacy apps). The proxy itself
       # reaches LDAPS over theta-net (sso-manager:636) without this host mapping.
       - "${LDAPS_PORT:-636}:636"
@@ -75,9 +75,10 @@ services:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
       - "${HTTPS_ALT_PORT:-4443}:4443"
-      # Management UI/API — localhost only (the front proxies it under TLS in
-      # normal use; exposed on localhost for first-run setup / healthcheck).
-      - "127.0.0.1:${MGMT_PORT:-3000}:3000"
+      # Management UI/API. Bind address is configurable via MGMT_BIND (default
+      # 0.0.0.0 so it's reachable on the LAN during setup). Set MGMT_BIND=127.0.0.1
+      # in .env to lock it to localhost once the proxy fronts it under TLS.
+      - "${MGMT_BIND:-0.0.0.0}:${MGMT_PORT:-3000}:3000"
     # Written by setup.sh from .env + the bootstrap output (OAuth client creds).
     # setup.sh creates it before starting the proxy, so it always exists.
     env_file:
