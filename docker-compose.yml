@@ -2,17 +2,27 @@
 #
 # Brings up the two all-in-one images on one bridge network so the proxy can
 # reach the SSO internally (http://sso-manager:3001 for token/userinfo,
-# ldaps://sso-manager:636 for LDAP) without exposing the SSO's HTTP port to
-# the internet. The proxy is the public front (80/443); the SSO sits behind it.
+# ldaps://sso-manager:636 for LDAP) without exposing the SSO's HTTP port to the
+# internet. The proxy is the public front (80/443); the SSO sits behind it.
 #
 # Each project builds from its git submodule:
 #   ./sso-manager-node  -> Dockerfile.openldap (app + OpenLDAP + Redis)
 #   ./proxy              -> Dockerfile          (OpenResty + app + Redis)
 # So `git clone --recursive` is required to get the submodules first.
 #
-# First-run wiring (LDAP service account, first admin, OAuth client, proxy
-# config) is automated by ./setup.sh, which runs bootstrap/bootstrap.js inside
-# the sso-manager container and writes ./proxy.env (the proxy's env_file).
+# Config + secrets live in bind-mounted ./config/ (gitignored):
+#   ./config/sso-secrets.js   — SSO app + orchestrator config
+#   ./config/proxy-secrets.js — proxy OIDC/LDAP/auth config
+# Each app's entrypoint symlinks its file into /app/conf/secrets.js so
+# @simpleworkjs/conf reads it. No app_* env is passed (app_* env would override
+# secrets.js). The sso-manager mounts ./config read-write so the bootstrap can
+# write the generated OAuth client creds back into proxy-secrets.js; the proxy
+# mounts it read-only.
+#
+# Compose only interpolates the port defaults below — there is no .env file.
+# First-run wiring (LDAP service account, first admin, OAuth client) is
+# automated by ./setup.sh, which runs bootstrap/bootstrap.js inside the
+# sso-manager container.
 
 services:
   sso-manager:
@@ -24,33 +34,32 @@ services:
     networks: [theta-net]
     ports:
       # SSO web UI. Bind address is configurable via SSO_BIND (default 0.0.0.0 so
-      # the UI is reachable on the LAN during setup). Set SSO_BIND=127.0.0.1 in
-      # .env to lock it to localhost once the proxy fronts it at https://<SSO_HOST>.
+      # the UI is reachable on the LAN during setup). Set SSO_BIND=127.0.0.1 to
+      # lock it to localhost once the proxy fronts it at https://<SSO_HOST>.
       - "${SSO_BIND:-0.0.0.0}:${SSO_PORT:-3001}:3001"
       # LDAPS for EXTERNAL direct-LDAP clients (legacy apps). The proxy itself
       # reaches LDAPS over theta-net (sso-manager:636) without this host mapping.
       - "${LDAPS_PORT:-636}:636"
       # Plain LDAP (389) is NOT mapped — direct-LDAP clients should use LDAPS.
     environment:
-      - LDAP_BASE_DN=${LDAP_BASE_DN:-dc=example,dc=com}
-      - LDAP_DOMAIN=${LDAP_DOMAIN:-}
-      - LDAP_ADMIN_PASS=${LDAP_ADMIN_PASS:-admin}
-      - ORG_NAME=${ORG_NAME:-SSO Manager}
-      - LDAP_CERT_CN=${LDAP_CERT_CN:-}
-      - app_oauth__jwtSecret=${JWT_SECRET}
-      # OIDC issuer = the browser-facing URL the proxy serves the SSO at.
-      - app_oauth__issuer=https://${SSO_HOST}
-      - app_name=${ORG_NAME:-SSO Manager}
-      - app_smtp__host=${SMTP_HOST:-}
-      - app_smtp__port=${SMTP_PORT:-587}
-      - app_smtp__user=${SMTP_USER:-}
-      - app_smtp__pass=${SMTP_PASS:-}
-      - app_smtp__from=${SMTP_FROM:-}
+      # Config (LDAP, OAuth, SMTP, ...) comes from ./config/sso-secrets.js (see
+      # volumes below), not from env. NODE_ENV/NODE_PORT are the only env the app
+      # reads that are not part of its conf tree.
       - NODE_ENV=production
       - NODE_PORT=3001
     volumes:
+      # Operator-edited SSO secrets (sso-secrets.js). Read-WRITE so the bootstrap
+      # can write the generated OAuth client creds into proxy-secrets.js. The
+      # entrypoint symlinks /config/sso-secrets.js -> /app/conf/secrets.js.
+      - ./config:/config
+      # Persist the LDAP database across container recreation.
       - ldap-data:/var/lib/ldap
+      # Persist the auto-generated self-signed TLS cert so clients don't have to
+      # re-trust it on every rebuild.
       - ldap-certs:/etc/openldap/certs
+      # Persist Redis (AOF + RDB) so OAuth clients, tokens, and other Redis state
+      # survive container recreation.
+      - sso-data:/data
       # Bind-mount the bootstrap script so `docker compose exec sso-manager node
       # /bootstrap/bootstrap.js` can run it (read-only).
       - ./bootstrap:/bootstrap:ro
@@ -77,13 +86,21 @@ services:
       - "${HTTPS_ALT_PORT:-4443}:4443"
       # Management UI/API. Bind address is configurable via MGMT_BIND (default
       # 0.0.0.0 so it's reachable on the LAN during setup). Set MGMT_BIND=127.0.0.1
-      # in .env to lock it to localhost once the proxy fronts it under TLS.
+      # to lock it to localhost once the proxy fronts it under TLS.
       - "${MGMT_BIND:-0.0.0.0}:${MGMT_PORT:-3000}:3000"
-    # Written by setup.sh from .env + the bootstrap output (OAuth client creds).
-    # setup.sh creates it before starting the proxy, so it always exists.
-    env_file:
-      - ./proxy.env
+    environment:
+      # oidc/ldap/auth config comes from ./config/proxy-secrets.js (see volumes),
+      # not from env. NODE_ENV/NODE_PORT are process env the app reads directly.
+      - NODE_ENV=production
+      - NODE_PORT=3000
     volumes:
+      # Operator-edited proxy secrets (proxy-secrets.js). READ-ONLY — the proxy
+      # only reads it; the sso-manager bootstrap writes the OAuth creds. The
+      # entrypoint symlinks /config/proxy-secrets.js -> /app/conf/secrets.js.
+      - ./config:/config:ro
+      # Persist Redis (AOF + RDB) so Host records, permissions, DNS creds, local
+      # users, AND the auto-ssl Let's Encrypt certs survive container recreation.
+      - proxy-data:/data
       - proxy-cache:/var/cache/nginx/proxy
       - proxy-logs:/var/log/nginx
     healthcheck:
@@ -100,5 +117,7 @@ networks:
 volumes:
   ldap-data:
   ldap-certs:
+  sso-data:
+  proxy-data:
   proxy-cache:
   proxy-logs:

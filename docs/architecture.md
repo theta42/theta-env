@@ -73,7 +73,9 @@ redis instances is the no-source-patch path and is fine at this scale.
 `./setup.sh` orchestrates first-run wiring; `bootstrap/bootstrap.js` does the
 actual work, running **inside the sso-manager container** (bind-mounted
 read-only from this repo). It's deliberately self-contained — only Node
-built-ins (`child_process`, `crypto`) + global `fetch`:
+built-ins (`child_process`, `crypto`, `fs`) + global `fetch`, and it reads its
+inputs from the bind-mounted `./config/sso-secrets.js` + `./config/proxy-secrets.js`
+(not from env):
 
 1. **Build + start sso-manager**, wait for `/health`.
 2. **LDAP service account** — `ldapadd` `cn=ldapclient,ou=people,<base>` (an
@@ -86,44 +88,70 @@ built-ins (`child_process`, `crypto`) + global `fetch`:
 4. **Log in** as that admin via `POST /api/auth/login {uid,password}` — this
    also validates the password end-to-end.
 5. **Register the proxy as an OIDC client** via `POST /api/oauth/client` (gated
-   by `app_sso_oauth_admin`, satisfied by step 3), capturing the raw
-   `client_secret` (shown once). If the client already exists and `proxy.env` is
-   present, leave it; if `proxy.env` was lost, rotate the secret so a restored
-   proxy gets one it can read.
-6. **Write `./proxy.env`** (the proxy's `env_file`) from `.env` + the bootstrap
-   output — all `app_*` env overrides so the proxy reads them via
-   `@simpleworkjs/conf` (≥1.1.0).
-7. **Build + start the proxy**, wait for `/health`.
+   by `app_sso_oauth_admin`, satisfied by step 3). The SSO **generates** the
+   `client_id`/`client_secret` (UUIDs) — supplied creds are ignored — so the
+   bootstrap writes the generated creds **back into `./config/proxy-secrets.js`**
+   (the sso-manager mounts `./config` read-write for this; the proxy mounts it
+   read-only). If `proxy-secrets.js` already holds a `clientId`+`clientSecret`
+   matching an existing client, they are kept; if the client exists but the file
+   has no usable secret, the secret is rotated and written back.
+6. **Build + start the proxy**, wait for `/health`. The proxy entrypoint symlinks
+   `./config/proxy-secrets.js` to `/app/conf/secrets.js`, so `@simpleworkjs/conf`
+   (≥1.1.0) reads the OAuth creds + LDAP bind creds from the file.
 
 `setup.sh` then prints the first-admin login + the public URLs.
+
+### How config reaches the apps (no `.env`)
+
+All config and secrets live in `./config/` (gitignored, bind-mounted). Each
+entrypoint symlinks its file to `/app/conf/secrets.js` early, before the app
+starts:
+
+```
+./config/sso-secrets.js    ->  sso-manager:/app/conf/secrets.js   (./config RW)
+./config/proxy-secrets.js  ->  proxy:/app/conf/secrets.js         (./config RO)
+```
+
+`@simpleworkjs/conf` loads `conf/base.js → <env>.js → conf/secrets.js → app_*
+env`, where **env beats `secrets.js`**. So compose passes **no `app_*` env vars**
+(only `NODE_ENV`, `NODE_PORT`) — that makes `secrets.js` authoritative. The SSO
+entrypoint reads the few values it needs at startup (LDAP base DN, admin
+password, JWT secret, cert CN) from `secrets.js` via an in-container `node` call.
 
 ### Why not `require` the SSO's internal models?
 
 A `docker compose exec` process reads `conf/base.js` defaults (the docker-exec
-env doesn't carry the entrypoint's exported `app_*` vars), so the SSO's models
-would bind the wrong LDAP DN. Using the `openldap-clients` binaries with explicit
-admin creds sidesteps that entirely, and going through the HTTP API for the
-OAuth client validates the whole admin login path end-to-end.
+env doesn't carry the entrypoint's exported vars), so the SSO's models would
+bind the wrong LDAP DN. Using the `openldap-clients` binaries with explicit
+admin creds from `./config/sso-secrets.js` sidesteps that entirely, and going
+through the HTTP API for the OAuth client validates the whole admin login path
+end-to-end.
 
 ## Idempotency
 
-Re-running `./setup.sh` converges to `.env`:
+Re-running `./setup.sh` converges to `./config/`:
 
-- The LDAP service account + admin passwords are **reset to `.env`**.
+- The LDAP service account + admin passwords are **reset to `./config/`**.
 - Group membership is ensured (add is a no-op if already a member).
-- The OAuth client is left alone if `proxy.env` exists, rotated if not.
+- The OAuth client is kept if `proxy-secrets.js` already holds its creds;
+  created or rotated otherwise, and the new creds written back.
 
-So `setup.sh` is safe to re-run after editing `.env`, after a `docker compose
-down`, or after restoring from backup.
+So `setup.sh` is safe to re-run after editing `./config/`, after a `docker
+compose down`, or after restoring from backup.
 
-## Backups
+## Backups and restore
+
+`./setup.sh` auto-snapshots `./config/` + LDAP + both Redis to
+`./backups/<timestamp>/` before each rebuild (keeps the last `BACKUP_KEEP`,
+default 5). State lives on named volumes (`ldap-data`, `sso-data`, `proxy-data`)
+and survives recreation; `down -v` wipes them. Redis is persisted with AOF +
+RDB on those volumes. For the full manual-backup + restore runbook (full /
+Redis-only / LDAP-only, with the AOF-vs-RDB note), see the *Backups and
+restore* section of the [README](https://github.com/theta42/theta-env#backups-and-restore).
+Quick LDAP backup:
 
 ```bash
-docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf -b "$LDAP_BASE_DN" > backup.ldif
+docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf -b "<base>" > backup.ldif
 ```
-
-Keep your `.env` (holds `LDAP_ADMIN_PASS` + `JWT_SECRET`) and `proxy.env` too.
-Restore is `ldapadd`/`ldapmodify` from the LDIF into a fresh directory, then
-re-run `./setup.sh`.
 
 [← Back to Home](index.html)

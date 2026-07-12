@@ -3,38 +3,68 @@
 # theta-env setup — one-command bring-up of the unified SSO Manager + Proxy stack.
 #
 #   git clone --recursive <theta-env> && cd theta-env
-#   cp .env.example .env   # edit the REQUIRED values
-#   ./setup.sh
+#   ./setup.sh            # generates ./config/ the first time — edit it, re-run
+#   ./setup.sh            # builds + bootstraps + starts the stack
 #
-# Idempotent: safe to re-run. It (re)starts the SSO Manager, runs the bootstrap
-# (which converges the LDAP service account / first admin / OAuth client to the
-# .env values), writes ./proxy.env (the proxy's env_file), then starts the proxy.
+# Idempotent: safe to re-run. It manages config in a bind-mounted ./config/
+# directory (sso-secrets.js + proxy-secrets.js — NO .env / proxy.env), snapshots
+# state before rebuild, (re)starts the SSO Manager, runs the bootstrap (which
+# converges the LDAP service account / first admin / OAuth client to the ./config
+# values and writes the generated OAuth client creds into proxy-secrets.js),
+# then starts the proxy.
 #
 # What it does, in order:
 #   1. Update the git submodules to the latest of their tracked remote branch
-#      (so each run builds the newest sso-manager-node + proxy), then verify the
-#      build contexts are present. Skip with SKIP_SUBMODULE_UPDATE=1.
-#   2. Validate .env (copy from .env.example if missing) + the REQUIRED values.
-#   3. docker compose up -d sso-manager; wait for /health.
-#   4. docker compose exec sso-manager node /bootstrap/bootstrap.js
-#      -> prints CLIENT_ID / CLIENT_SECRET / ALREADY_CONFIGURED on stdout.
-#   5. Write ./proxy.env from .env + the bootstrap output (the proxy's app_* env).
-#   6. docker compose up -d proxy; wait for /health.
+#      (so each run builds the newest sso-manager-node + proxy). Skip with
+#      SKIP_SUBMODULE_UPDATE=1.
+#   2. ensure_config: create ./config/sso-secrets.js + proxy-secrets.js if
+#      missing. On a fresh clone they're generated with random secrets and you
+#      must edit them + re-run. On an existing deployment with .env/proxy.env,
+#      the secrets are migrated (preserved) into ./config. If ./config already
+#      exists it is left untouched (the operator owns it).
+#   3. backup_before_rebuild: snapshot ./config + LDAP (slapcat) + both Redis
+#      (BGSAVE + dump.rdb) to ./backups/<ts>/ before the rebuild. No-op on the
+#      very first run. Keeps the last BACKUP_KEEP (default 5).
+#   4. docker compose up -d --build sso-manager; wait for /health.
+#   5. docker compose exec sso-manager node /bootstrap/bootstrap.js
+#      -> creates/updates the LDAP service account, first admin, OAuth client;
+#         writes the OAuth client creds into ./config/proxy-secrets.js; prints
+#         CLIENT_ID / CLIENT_SECRET / ALREADY_CONFIGURED on stdout.
+#   6. docker compose up -d --build proxy; wait for /health.
 #   7. Print the first-admin login + the public URLs.
 #
-# Requires: git, docker + docker compose (v1 standalone or v2 plugin). The
-# compose file uses `version: '3.8'` + single-level ${VAR} interpolation so v1
-# works.
+# Requires: git, docker + docker compose (v1 standalone or v2 plugin).
 
 set -euo pipefail
 
 cd "$(dirname "$0")"
+
+CONFIG_DIR=./config
+BACKUP_DIR=./backups
+BACKUP_KEEP="${BACKUP_KEEP:-5}"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 info()  { printf '\033[1;34m[setup]\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m[setup]\033[0m %s\n' "$*" >&2; }
 error() { printf '\033[1;31m[setup]\033[0m %s\n' "$*" >&2; }
 die()   { error "$*"; exit 1; }
+
+# Escape a value for a single-quoted JS string: \ -> \\, ' -> \', then wrap in '...'.
+js_str() {
+	local s="$1"
+	s="${s//\\/\\\\}"
+	s="${s//\'/\\\'}"
+	printf "'%s'" "$s"
+}
+
+# Random hex (openssl if available, else /dev/urandom).
+rand_hex() {
+	if command -v openssl >/dev/null 2>&1; then
+		openssl rand -hex "${1:-32}"
+	else
+		head -c "$((${1:-32} / 2 + 1))" /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-$((2 * ${1:-32}))
+	fi
+}
 
 # Detect docker compose (v2 plugin `docker compose` or v1 standalone `docker-compose`).
 if docker compose version >/dev/null 2>&1; then
@@ -45,56 +75,18 @@ else
 	die "docker compose not found. Install Docker Compose (v2 plugin or v1 standalone)."
 fi
 
-# ── 1. Update submodules to latest, verify build contexts ─────────────────────
-# Pull the newest code for both submodules (sso-manager-node, proxy) so each
-# run builds from current upstream, not whatever was pinned at clone time.
-# `--init` also populates the submodules if the repo was cloned without
-# --recursive; `--remote` checks out the tip of each submodule's tracked remote
-# branch (master, per .gitmodules). Set SKIP_SUBMODULE_UPDATE=1 to lock to the
-# pinned commits (offline rebuild / deliberate pin).
-if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
-	if ! command -v git >/dev/null 2>&1; then
-		die "git not found. Install git, or set SKIP_SUBMODULE_UPDATE=1 to build the pinned submodule commits."
-	fi
-	info "Updating submodules to latest (sso-manager-node, proxy)..."
-	# Fetch + checkout each submodule's remote tip. Don't hard-fail if the fetch
-	# is unreachable (offline) — warn and build whatever's already checked out.
-	if ! git submodule update --init --remote --recursive 2>&1; then
-		warn "git submodule update failed (offline?) — continuing with the currently checked-out code."
-	fi
-else
-	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
-fi
+# Is a named container running? (compose-independent check.)
+running() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
 
-# The compose build contexts must exist or `docker compose build` fails obscurely.
-[[ -f sso-manager-node/Dockerfile.openldap ]] \
-	|| die "sso-manager-node/Dockerfile.openldap missing. Run: git submodule update --init --recursive"
-[[ -f proxy/Dockerfile ]] \
-	|| die "proxy/Dockerfile missing. Run: git submodule update --init --recursive"
-
-# ── 2. Load + validate .env ───────────────────────────────────────────────────
-if [[ ! -f .env ]]; then
-	if [[ -f .env.example ]]; then
-		cp .env.example .env
-		info "Created .env from .env.example — EDIT IT and re-run ./setup.sh."
-		info "Required: LDAP_ADMIN_PASS, JWT_SECRET, SSO_HOST, PROXY_HOST, BOOTSTRAP_ADMIN_PASS."
-		exit 0
-	else
-		die ".env not found and no .env.example to copy from."
-	fi
-fi
-
-# Load .env the same way `docker compose` does — the value is everything after
-# the FIRST '=' on the line — so values with spaces (e.g. `ORG_NAME=My Org`)
-# work identically here and in compose. `source .env` would instead treat
-# `ORG_NAME=My Org` as `ORG_NAME=My` + a `Org` command and abort under errexit.
-# Outer wrapping quotes (single or double) around a value are stripped.
-# Lines that are blank, start with '#', have no '=', or whose key isn't a
-# valid identifier are skipped. No shell expansion/eval is performed on values.
-load_env() {
-	local line key val qc
+# Parse a KEY=VALUE file into the environment the way `docker compose` does:
+# the value is everything after the FIRST '=' (so `ORG_NAME=My Org` works),
+# outer wrapping quotes are stripped, blank/#/no-=/invalid-identifier lines
+# are skipped. No shell expansion/eval is performed on values.
+parse_kv_file() {
+	local file="$1" line key val qc
+	[[ -f "$file" ]] || return 0
 	while IFS= read -r line || [[ -n "$line" ]]; do
-		line="${line#"${line%%[![:space:]]*}"}"          # trim leading whitespace
+		line="${line#"${line%%[![:space:]]*}"}"
 		[[ -z "$line" || "${line:0:1}" == '#' ]] && continue
 		[[ "$line" == *=* ]] || continue
 		key="${line%%=*}"
@@ -107,68 +99,295 @@ load_env() {
 			fi
 		fi
 		export "$key=$val"
-	done < .env
+	done < "$file"
 }
-load_env
 
-require() { [[ -n "${!1:-}" ]] || die ".env is missing required key: $1"; }
-require LDAP_BASE_DN
-require LDAP_ADMIN_PASS
-require SSO_HOST
-require PROXY_HOST
-require BOOTSTRAP_ADMIN_UID
-require BOOTSTRAP_ADMIN_PASS
-
-# JWT_SECRET: generate + persist if blank (so it survives re-runs).
-if [[ -z "${JWT_SECRET:-}" ]]; then
-	if command -v openssl >/dev/null 2>&1; then
-		JWT_SECRET=$(openssl rand -hex 32)
-	else
-		JWT_SECRET="theta-env-jwt-$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' ')"
+# ── 1. Update submodules to latest, verify build contexts ─────────────────────
+if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
+	if ! command -v git >/dev/null 2>&1; then
+		die "git not found. Install git, or set SKIP_SUBMODULE_UPDATE=1 to build the pinned submodule commits."
 	fi
-	if grep -q '^JWT_SECRET=' .env; then
-		sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env
-	else
-		printf 'JWT_SECRET=%s\n' "$JWT_SECRET" >> .env
+	info "Updating submodules to latest (sso-manager-node, proxy)..."
+	if ! git submodule update --init --remote --recursive 2>&1; then
+		warn "git submodule update failed (offline?) — continuing with the currently checked-out code."
 	fi
-	info "Generated + persisted JWT_SECRET into .env (save it — it signs all tokens)."
+else
+	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
 fi
 
-# Default BOOTSTRAP_ADMIN_EMAIL if blank.
-BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-admin@${PROXY_HOST}}"
-# Default LDAP_SERVICE_PASS if blank (random).
-if [[ -z "${LDAP_SERVICE_PASS:-}" ]]; then
-	if command -v openssl >/dev/null 2>&1; then
-		LCD=$(openssl rand -hex 16)
-	else
-		LCD="svc-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' ')"
+[[ -f sso-manager-node/Dockerfile.openldap ]] \
+	|| die "sso-manager-node/Dockerfile.openldap missing. Run: git submodule update --init --recursive"
+[[ -f proxy/Dockerfile ]] \
+	|| die "proxy/Dockerfile missing. Run: git submodule update --init --recursive"
+
+# ── 2. ensure_config ──────────────────────────────────────────────────────────
+# Derive a DNS domain from a base DN (dc=foo,dc=bar -> foo.bar).
+domain_from_dn() {
+	echo "$1" | sed 's/^dc=//; s/,dc=/./g'
+}
+
+# Write ./config/sso-secrets.js from the CFG_* shell vars.
+write_sso_secrets() {
+	local dn="$CFG_BASE_DN" domain="$CFG_DOMAIN"
+	[[ -n "$domain" ]] || domain="$(domain_from_dn "$dn")"
+	cat > "$CONFIG_DIR/sso-secrets.js" <<SSOEOF
+'use strict';
+// Generated by setup.sh. Edit freely; re-run ./setup.sh to apply.
+// The SSO app reads this via @simpleworkjs/conf (symlinked to conf/secrets.js).
+// The app ignores the extra stack/bootstrap/serviceAccountPass keys (read by
+// the orchestrator). Back this file up off-host — it holds all SSO secrets.
+
+module.exports = {
+	name: $(js_str "$CFG_ORG"),
+	ldap: {
+		url: 'ldap://localhost:389',
+		bindDN: $(js_str "cn=admin,${dn}"),
+		bindPassword: $(js_str "$CFG_LDAP_ADMIN_PASS"),
+		userBase: $(js_str "ou=people,${dn}"),
+		groupBase: $(js_str "ou=groups,${dn}"),
+	},
+	smtp: {
+		host: $(js_str "${CFG_SMTP_HOST:-}"),
+		port: ${CFG_SMTP_PORT:-587},
+		secure: false,
+		user: $(js_str "${CFG_SMTP_USER:-}"),
+		pass: $(js_str "${CFG_SMTP_PASS:-}"),
+		from: $(js_str "${CFG_SMTP_FROM:-${CFG_ORG} <noreply@${domain}>}"),
+	},
+	oauth: {
+		issuer: $(js_str "https://${CFG_SSO_HOST}"),
+		jwtSecret: $(js_str "$CFG_JWT_SECRET"),
+		token_lifetime: { access_token: 3600, refresh_token: 2592000 },
+	},
+
+	// ── Orchestrator-only (ignored by the app) ───────────────────────────────
+	stack: {
+		ldapBaseDn: $(js_str "$dn"),
+		ldapDomain: $(js_str "$domain"),
+		ldapCertCn: $(js_str "${CFG_LDAP_CERT_CN:-}"),
+		ssoHost: $(js_str "$CFG_SSO_HOST"),
+		proxyHost: $(js_str "$CFG_PROXY_HOST"),
+	},
+	bootstrap: {
+		adminUid: $(js_str "$CFG_ADMIN_UID"),
+		adminPass: $(js_str "$CFG_ADMIN_PASS"),
+		adminEmail: $(js_str "$CFG_ADMIN_EMAIL"),
+	},
+	serviceAccountPass: $(js_str "$CFG_SVC_PASS"),
+};
+SSOEOF
+}
+
+# Write ./config/proxy-secrets.js from the CFG_* shell vars. clientId/clientSecret
+# are placeholders; the bootstrap writes the generated values back into this file.
+write_proxy_secrets() {
+	local dn="$CFG_BASE_DN"
+	cat > "$CONFIG_DIR/proxy-secrets.js" <<PROXYEOF
+'use strict';
+// Generated by setup.sh. The proxy reads this via @simpleworkjs/conf (symlinked
+// to conf/secrets.js). clientId/clientSecret are filled in by the bootstrap
+// (run by ./setup.sh) — leave them as-is. ldap.bindPassword MUST equal
+// serviceAccountPass in sso-secrets.js (the proxy binds as that account).
+
+module.exports = {
+	oidc: {
+		enabled: true,
+		issuer: $(js_str "https://${CFG_SSO_HOST}"),
+		authorizationEndpoint: $(js_str "https://${CFG_SSO_HOST}/oauth/authorize"),
+		tokenEndpoint: 'http://sso-manager:3001/oauth/token',
+		userinfoEndpoint: 'http://sso-manager:3001/oauth/userinfo',
+		endSessionEndpoint: $(js_str "https://${CFG_SSO_HOST}/oauth/logout"),
+		clientId: $(js_str "$CFG_CLIENT_ID"),
+		clientSecret: $(js_str "$CFG_CLIENT_SECRET"),
+		redirectUri: $(js_str "https://${CFG_PROXY_HOST}/api/auth/oidc/callback"),
+		scopes: ['openid', 'profile', 'email', 'groups'],
+		groupsClaim: 'groups',
+		usernameClaim: 'preferred_username',
+	},
+	ldap: {
+		url: 'ldaps://sso-manager:636',
+		bindDN: $(js_str "cn=ldapclient,ou=people,${dn}"),
+		bindPassword: $(js_str "$CFG_SVC_PASS"),
+		searchBase: $(js_str "ou=people,${dn}"),
+		userFilter: '(objectClass=posixAccount)',
+		userNameAttribute: 'uid',
+		tlsOptions: { rejectUnauthorized: false },
+	},
+	auth: {
+		adminGroups: ['app_sso_admin'],
+		adminUsers: ['proxyadmin2'],
+		groupRoleMap: {},
+	},
+	stack: {
+		ssoHost: $(js_str "$CFG_SSO_HOST"),
+		proxyHost: $(js_str "$CFG_PROXY_HOST"),
+	},
+};
+PROXYEOF
+}
+
+ensure_config() {
+	if [[ -f "$CONFIG_DIR/sso-secrets.js" ]]; then
+		info "Using existing $CONFIG_DIR/sso-secrets.js (operator-owned — left untouched)."
+		return 0
 	fi
-	LDAP_SERVICE_PASS="$LCD"
-	if grep -q '^LDAP_SERVICE_PASS=' .env; then
-		sed -i "s|^LDAP_SERVICE_PASS=.*|LDAP_SERVICE_PASS=${LDAP_SERVICE_PASS}|" .env
-	else
-		printf 'LDAP_SERVICE_PASS=%s\n' "$LDAP_SERVICE_PASS" >> .env
+
+	# Defaults for a fresh generation. Overridden below by .env/proxy.env if the
+	# operator is migrating from the old .env-based setup.
+	CFG_BASE_DN="${CFG_BASE_DN:-dc=example,dc=com}"
+	CFG_DOMAIN="${CFG_DOMAIN:-}"
+	CFG_ORG="${CFG_ORG:-SSO Manager}"
+	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.example.com}"
+	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.example.com}"
+	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
+	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-}"
+	CFG_LDAP_CERT_CN="${CFG_LDAP_CERT_CN:-}"
+	CFG_CLIENT_ID="${CFG_CLIENT_ID:-}"
+	CFG_CLIENT_SECRET="${CFG_CLIENT_SECRET:-}"
+	# Random secrets (generated fresh unless migrated from .env below).
+	CFG_LDAP_ADMIN_PASS="${CFG_LDAP_ADMIN_PASS:-$(rand_hex 16)}"
+	CFG_JWT_SECRET="${CFG_JWT_SECRET:-$(rand_hex 32)}"
+	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-$(rand_hex 16)}"
+	CFG_SVC_PASS="${CFG_SVC_PASS:-$(rand_hex 16)}"
+
+	# ── One-time migration from .env / proxy.env (existing deployments) ──
+	# Preserve the operator's existing secrets so the running deployment keeps
+	# its LDAP directory, JWT, and OAuth client. After migration .env/proxy.env
+	# are dead weight — setup.sh prints a reminder to delete them.
+	local migrated=0
+	if [[ -f .env ]]; then
+		info "Migrating secrets from .env into $CONFIG_DIR/ ..."
+		parse_kv_file .env
+		CFG_BASE_DN="${LDAP_BASE_DN:-$CFG_BASE_DN}"
+		CFG_DOMAIN="${LDAP_DOMAIN:-$CFG_DOMAIN}"
+		CFG_ORG="${ORG_NAME:-$CFG_ORG}"
+		CFG_SSO_HOST="${SSO_HOST:-$CFG_SSO_HOST}"
+		CFG_PROXY_HOST="${PROXY_HOST:-$CFG_PROXY_HOST}"
+		CFG_ADMIN_UID="${BOOTSTRAP_ADMIN_UID:-$CFG_ADMIN_UID}"
+		CFG_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-$CFG_ADMIN_EMAIL}"
+		CFG_LDAP_ADMIN_PASS="${LDAP_ADMIN_PASS:-$CFG_LDAP_ADMIN_PASS}"
+		CFG_JWT_SECRET="${JWT_SECRET:-$CFG_JWT_SECRET}"
+		CFG_ADMIN_PASS="${BOOTSTRAP_ADMIN_PASS:-$CFG_ADMIN_PASS}"
+		CFG_SVC_PASS="${LDAP_SERVICE_PASS:-$CFG_SVC_PASS}"
+		CFG_LDAP_CERT_CN="${LDAP_CERT_CN:-$CFG_LDAP_CERT_CN}"
+		CFG_SMTP_HOST="${SMTP_HOST:-${CFG_SMTP_HOST:-}}"
+		CFG_SMTP_PORT="${SMTP_PORT:-${CFG_SMTP_PORT:-}}"
+		CFG_SMTP_USER="${SMTP_USER:-${CFG_SMTP_USER:-}}"
+		CFG_SMTP_PASS="${SMTP_PASS:-${CFG_SMTP_PASS:-}}"
+		CFG_SMTP_FROM="${SMTP_FROM:-${CFG_SMTP_FROM:-}}"
+		migrated=1
 	fi
-	info "Generated + persisted LDAP_SERVICE_PASS into .env."
-fi
+	if [[ -f proxy.env ]]; then
+		info "Migrating proxy config from proxy.env into $CONFIG_DIR/ ..."
+		# proxy.env uses app_* keys; pull the OAuth client creds out directly.
+		CFG_CLIENT_ID="$(grep -m1 '^app_oidc__clientId=' proxy.env 2>/dev/null | cut -d= -f2- || true)"
+		CFG_CLIENT_SECRET="$(grep -m1 '^app_oidc__clientSecret=' proxy.env 2>/dev/null | cut -d= -f2- || true)"
+		# LDAP_BIND_PASSWORD in proxy.env == the service account pass.
+		local pbp; pbp="$(grep -m1 '^app_ldap__bindPassword=' proxy.env 2>/dev/null | cut -d= -f2- || true)"
+		[[ -n "$pbp" ]] && CFG_SVC_PASS="$pbp"
+		migrated=1
+	fi
+	[[ -n "$CFG_ADMIN_EMAIL" ]] || CFG_ADMIN_EMAIL="admin@${CFG_PROXY_HOST}"
 
-info "Stack config:"
-info "  Base DN:      ${LDAP_BASE_DN}"
-info "  SSO host:      https://${SSO_HOST}"
-info "  Proxy host:    https://${PROXY_HOST}"
-info "  Admin uid:     ${BOOTSTRAP_ADMIN_UID}"
+	mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR"
+	write_sso_secrets
+	write_proxy_secrets
+	chmod 600 "$CONFIG_DIR/sso-secrets.js" "$CONFIG_DIR/proxy-secrets.js"
 
-# ── 3. Start SSO Manager, wait for health ─────────────────────────────────────
-# Compose v2 validates env_file paths for ALL services in the project at load
-# time — including the proxy's ./proxy.env — even when only sso-manager is
-# being started. proxy.env isn't written until step 4 (from the bootstrap
-# output), so create an empty stub here on first run so compose v2 doesn't bail
-# with "env file ./proxy.env not found". The stub carries no vars (a proxy not
-# yet started reads nothing from it); step 4 overwrites it with the real config.
-# (compose v1 only loads env_file for services being started, so this is a
-# no-op there — touch is harmless on an existing, populated proxy.env.)
-touch ./proxy.env
+	if [[ "$migrated" == "1" ]]; then
+		info "Migrated secrets into $CONFIG_DIR/ (existing LDAP dir / JWT / OAuth client preserved)."
+		info "You may now delete .env and proxy.env — they are no longer used."
+	else
+		# Fresh generation with placeholder hostnames — the operator must edit.
+		info "Generated $CONFIG_DIR/sso-secrets.js + proxy-secrets.js with random secrets."
+		warn "EDIT $CONFIG_DIR/sso-secrets.js (set stack.ssoHost, stack.proxyHost, stack.ldapBaseDn,"
+		warn "  bootstrap.adminUid/adminPass to your values), then re-run ./setup.sh."
+		info "Re-run ./setup.sh after editing. (LDAP admin pass + JWT were generated for you —"
+		info "change them in the file if you like, or leave them.)"
+		exit 0
+	fi
+}
 
+ensure_config
+
+# ── 3. backup_before_rebuild ──────────────────────────────────────────────────
+# Snapshot ./config + LDAP (slapcat) + both Redis (BGSAVE + dump.rdb) before the
+# rebuild. No-op on the very first run (nothing running, no config to lose yet).
+backup_before_rebuild() {
+	local any_running=0
+	running sso-manager && any_running=1
+	running proxy && any_running=1
+	if [[ "$any_running" == "0" && ! -d "$CONFIG_DIR" ]]; then
+		info "First run — nothing to back up yet."
+		return 0
+	fi
+
+	# A timestamp suffix. `date` is fine here (setup.sh runs on the host).
+	local ts; ts="$(date +%Y%m%d-%H%M%S)"
+	local dir="$BACKUP_DIR/$ts"
+	mkdir -p "$dir" && chmod 700 "$dir"
+	info "Snapshotting state to $dir/ before rebuild..."
+
+	# Config (the secrets source — the most important thing to back up).
+	if [[ -d "$CONFIG_DIR" ]]; then
+		cp -a "$CONFIG_DIR" "$dir/config" 2>/dev/null \
+			|| warn "  could not copy $CONFIG_DIR/"
+	fi
+
+	# LDAP — slapcat the live directory while slapd is running.
+	if running sso-manager; then
+		local basedn
+		basedn="$("${COMPOSE[@]}" exec -T sso-manager node -e \
+			'console.log((require("/config/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
+		if [[ -n "$basedn" ]]; then
+			if "${COMPOSE[@]}" exec -T sso-manager slapcat -f /etc/openldap/slapd.conf \
+					-b "$basedn" > "$dir/ldap.ldif" 2>/dev/null; then
+				info "  LDAP -> ldap.ldif ($basedn)"
+			else
+				warn "  slapcat failed (LDAP not ready?) — LDAP not snapshotted"
+			fi
+		else
+			warn "  could not read ldapBaseDn from sso-secrets.js — LDAP not snapshotted"
+		fi
+	fi
+
+	# Redis — hot snapshot each running service: BGSAVE, wait for LASTSAVE to
+	# advance (<=30s), then copy the RDB out.
+	local svc pid
+	for svc in sso-manager proxy; do
+		running "$svc" || continue
+		if ! docker exec "$svc" redis-cli BGSAVE >/dev/null 2>&1; then
+			warn "  $svc: redis-cli BGSAVE failed — not snapshotted"
+			continue
+		fi
+		local before ok=0
+		before="$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || echo 0)"
+		for i in $(seq 1 30); do
+			if [[ "$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9')" -gt "$before" ]]; then
+				ok=1; break
+			fi
+			sleep 1
+		done
+		if [[ "$ok" == "1" ]] && "${COMPOSE[@]}" cp "$svc:/data/dump.rdb" "$dir/$svc.rdb" >/dev/null 2>&1; then
+			info "  Redis ($svc) -> $svc.rdb"
+		else
+			warn "  $svc: BGSAVE did not finish in 30s — Redis not snapshotted"
+		fi
+	done
+
+	# Retention: keep the newest BACKUP_KEEP (min 1).
+	local keep="$BACKUP_KEEP"; (( keep < 1 )) && keep=1
+	local removed=0
+	while read -r old; do
+		[[ -n "$old" ]] || continue
+		rm -rf "$BACKUP_DIR/$old"
+		removed=$((removed + 1))
+	done < <(ls -1 "$BACKUP_DIR" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
+	[[ "$removed" -gt 0 ]] && info "  pruned $removed old backup(s) (keeping $keep)."
+}
+backup_before_rebuild
+
+# ── 4. Start SSO Manager, wait for health ─────────────────────────────────────
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 
@@ -177,7 +396,6 @@ for i in $(seq 1 60); do
 	status=$("${COMPOSE[@]}" ps -o json sso-manager 2>/dev/null \
 	         | grep -o '"Health":"healthy"' || true)
 	if [[ -n "$status" ]]; then info "sso-manager is healthy."; break; fi
-	# Fall back to probing /health directly (compose v1 lacks `ps -o json`).
 	if docker exec sso-manager wget -q -O- http://localhost:3001/health >/dev/null 2>&1; then
 		info "sso-manager is healthy (probed /health)."; break
 	fi
@@ -185,95 +403,51 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
-# ── 4. Run the bootstrap (writes CLIENT_ID/CLIENT_SECRET/ALREADY_CONFIGURED) ──
-# PROXY_ENV_EXISTS tells the bootstrap whether to rotate the client secret: if
-# proxy.env already holds a secret, keep it (the proxy can still read it); if
-# not, rotate so a wiped-and-restored proxy gets a usable secret. We check for
-# an actual app_oidc__clientSecret line rather than mere file existence because
-# step 2 above may have created an empty stub (so compose v2's project-wide
-# env_file validation passes) — a bare stub must NOT suppress first-run client
-# creation or wiped-proxy secret rotation.
-PROXY_ENV_EXISTS=0
-if [[ -f ./proxy.env ]] && grep -q '^app_oidc__clientSecret=' ./proxy.env; then
-	PROXY_ENV_EXISTS=1
-fi
+# Read the summary values (hosts, admin, base DN) back from ./config via the
+# running container's node — works whether ./config was generated or pre-existing.
+read_config_kv() {
+	"${COMPOSE[@]}" exec -T sso-manager node -e '
+		const c = require("/config/sso-secrets.js");
+		const o = {
+			SSO_HOST: (c.stack && c.stack.ssoHost) || "",
+			PROXY_HOST: (c.stack && c.stack.proxyHost) || "",
+			LDAP_BASE_DN: (c.stack && c.stack.ldapBaseDn) || "",
+			ORG_NAME: c.name || "",
+			ADMIN_UID: (c.bootstrap && c.bootstrap.adminUid) || "",
+			ADMIN_PASS: (c.bootstrap && c.bootstrap.adminPass) || "",
+		};
+		for (const k in o) console.log(k + "=" + (o[k] == null ? "" : o[k]));
+	' 2>/dev/null
+}
+CFG_OUT="$(read_config_kv || true)"
+cfgval() { echo "$CFG_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
+SSO_HOST="$(cfgval SSO_HOST)"
+PROXY_HOST="$(cfgval PROXY_HOST)"
+ADMIN_UID="$(cfgval ADMIN_UID)"
+ADMIN_PASS="$(cfgval ADMIN_PASS)"
 
+info "Stack config:"
+info "  SSO host:      https://${SSO_HOST}"
+info "  Proxy host:    https://${PROXY_HOST}"
+info "  Admin uid:     ${ADMIN_UID}"
+
+# ── 5. Run the bootstrap (writes CLIENT_ID/CLIENT_SECRET/ALREADY_CONFIGURED) ──
+# The bootstrap reads its inputs from /config/*.js (not env) and writes the
+# generated OAuth client creds back into /config/proxy-secrets.js. No -e flags.
 info "Running bootstrap (creates/updates the LDAP service account, first admin, OAuth client)..."
-BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
-	-e LDAP_BASE_DN="${LDAP_BASE_DN}" \
-	-e LDAP_ADMIN_PASS="${LDAP_ADMIN_PASS}" \
-	-e BOOTSTRAP_ADMIN_UID="${BOOTSTRAP_ADMIN_UID}" \
-	-e BOOTSTRAP_ADMIN_PASS="${BOOTSTRAP_ADMIN_PASS}" \
-	-e BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL}" \
-	-e LDAP_SERVICE_PASS="${LDAP_SERVICE_PASS}" \
-	-e SSO_HOST="${SSO_HOST}" \
-	-e PROXY_HOST="${PROXY_HOST}" \
-	-e PROXY_ENV_EXISTS="${PROXY_ENV_EXISTS}" \
-	sso-manager node /bootstrap/bootstrap.js) \
+BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/bootstrap.js) \
 	|| die "bootstrap failed:\n${BOOTSTRAP_OUT}"
 
-# Parse KEY=VALUE lines from stdout (bootstrap logs go to stderr, so this is clean).
 getval() { echo "$BOOTSTRAP_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
 CLIENT_ID=$(getval CLIENT_ID)
 CLIENT_SECRET=$(getval CLIENT_SECRET)
 ALREADY_CONFIGURED=$(getval ALREADY_CONFIGURED)
 [[ -n "$CLIENT_ID" ]] || die "bootstrap did not return CLIENT_ID:\n${BOOTSTRAP_OUT}"
-[[ -n "$CLIENT_SECRET" ]] || die "bootstrap did not return CLIENT_SECRET:\n${BOOTSTRAP_OUT}"
-
-# ── 5. Write ./proxy.env (the proxy's env_file) ───────────────────────────────
-# All app_* so the proxy reads them via @simpleworkjs/conf (>=1.1.0) env overrides.
-# Browser-facing endpoints use https://${SSO_HOST}; server-to-server
-# token/userinfo use the internal http://sso-manager:3001 (no hairpin through the
-# public TLS listener). LDAP over LDAPS on the docker network with the SSO's
-# self-signed cert (rejectUnauthorized=false). adminGroups + adminUsers are JSON
-# arrays (conf coerces via JSON.parse).
-if [[ "$CLIENT_SECRET" == "__UNCHANGED__" ]]; then
-	if [[ -f ./proxy.env ]]; then
-		info "proxy.env exists and client unchanged — preserving existing proxy.env."
-		CLIENT_SECRET=$(grep -m1 '^app_oidc__clientSecret=' ./proxy.env | cut -d= -f2-)
-		[[ -n "$CLIENT_SECRET" ]] || die "proxy.env exists but has no app_oidc__clientSecret; delete it and re-run."
-	else
-		# Shouldn't happen (bootstrap only emits __UNCHANGED__ when proxy.env exists),
-		# but recover by rotating: re-run bootstrap with PROXY_ENV_EXISTS=0.
-		die "proxy.env missing but bootstrap said unchanged. Delete proxy.env if present and re-run."
-	fi
-fi
-
-info "Writing ./proxy.env (proxy app_* config)..."
-cat > ./proxy.env << PROXYEOF
-# Generated by setup.sh from .env + the bootstrap output. DO NOT COMMIT.
-# The proxy reads these via @simpleworkjs/conf app_* env overrides.
-
-# ── OIDC (browser-facing endpoints use the public SSO URL; token/userinfo use
-#    the internal docker-network URL so the proxy never hairpins through TLS).
-app_oidc__issuer=https://${SSO_HOST}
-app_oidc__authorizationEndpoint=https://${SSO_HOST}/oauth/authorize
-app_oidc__endSessionEndpoint=https://${SSO_HOST}/oauth/logout
-app_oidc__tokenEndpoint=http://sso-manager:3001/oauth/token
-app_oidc__userinfoEndpoint=http://sso-manager:3001/oauth/userinfo
-app_oidc__clientId=${CLIENT_ID}
-app_oidc__clientSecret=${CLIENT_SECRET}
-app_oidc__redirectUri=https://${PROXY_HOST}/api/auth/oidc/callback
-app_oidc__enabled=true
-
-# ── LDAP (direct bind over LDAPS on the docker network; self-signed cert).
-app_ldap__url=ldaps://sso-manager:636
-app_ldap__bindDN=cn=ldapclient,ou=people,${LDAP_BASE_DN}
-app_ldap__bindPassword=${LDAP_SERVICE_PASS}
-app_ldap__searchBase=ou=people,${LDAP_BASE_DN}
-app_ldap__userFilter=(objectClass=posixAccount)
-app_ldap__tlsOptions__rejectUnauthorized=false
-
-# ── Auth (anti-lockout: the local proxyadmin2 user + SSO admin group).
-app_auth__adminGroups=["app_sso_admin"]
-app_auth__adminUsers=["proxyadmin2"]
-PROXYEOF
-chmod 600 ./proxy.env
 
 if [[ "$ALREADY_CONFIGURED" == "1" ]]; then
-	info "Stack was already configured — proxy.env refreshed with current creds."
+	info "Stack was already configured — OAuth client creds in proxy-secrets.js are current."
 else
-	info "OAuth client registered + proxy.env written."
+	info "OAuth client registered + creds written into $CONFIG_DIR/proxy-secrets.js."
 fi
 
 # ── 6. Start the proxy, wait for health ───────────────────────────────────────
@@ -299,12 +473,15 @@ echo "  Proxy mgmt UI:      https://${PROXY_HOST}"
 echo "                      first-run fallback: http://127.0.0.1:${MGMT_PORT:-3000}"
 echo
 echo "  First admin login:"
-echo "    user: ${BOOTSTRAP_ADMIN_UID}"
-echo "    pass: ${BOOTSTRAP_ADMIN_PASS}"
+echo "    user: ${ADMIN_UID}"
+echo "    pass: ${ADMIN_PASS}"
+echo
+echo "  Secrets live in ./config/ (sso-secrets.js + proxy-secrets.js). Back them"
+echo "  up off-host — ./setup.sh snapshots to ./backups/ before each rebuild."
 echo
 echo "  Next: add DNS records (or /etc/hosts) pointing ${SSO_HOST} and ${PROXY_HOST}"
 echo "        at this host, then open https://${SSO_HOST} and log in as the admin."
 echo "        The proxy auto-issues Let's Encrypt certs if port 80 is reachable;"
 echo "        otherwise it serves a self-signed fallback on the LAN."
 echo
-echo "  Re-run ./setup.sh any time to converge the stack to .env (idempotent)."
+echo "  Re-run ./setup.sh any time to converge the stack to ./config/ (idempotent)."

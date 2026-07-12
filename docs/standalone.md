@@ -18,22 +18,22 @@ The all-in-one image (`Dockerfile.openldap`) bundles the app + OpenLDAP + Redis:
 ```bash
 git clone https://github.com/theta42/sso-manager-node.git
 cd sso-manager-node
-# Option A: configure via app_* env (preferred for Docker):
-LDAP_ADMIN_PASS='choose-a-strong-password' \
-JWT_SECRET="$(openssl rand -hex 32)" \
-docker compose up -d --build
-
-# Option B: configure via a file:
-cp secrets.js.example nodejs/conf/secrets.js   # edit it
+mkdir -p config && cp secrets.js.example config/sso-secrets.js   # edit it
 docker compose up -d --build
 ```
+
+The entrypoint symlinks `config/sso-secrets.js` to `nodejs/conf/secrets.js` so
+`@simpleworkjs/conf` reads it. Set `ldap.bindPassword`, `oauth.jwtSecret`, and
+the `stack`/`bootstrap` keys (the app ignores the ones it doesn't use). Pass
+**no `app_*` env** — env beats `secrets.js`, so `app_*` would silently override
+your file.
 
 - Web UI: `http://localhost:3001`
 - Health: `http://localhost:3001/health`
 - OIDC discovery: `http://localhost:3001/.well-known/openid-configuration`
 - LDAPS: `ldaps://<host>:636`
 
-Requires `@simpleworkjs/conf` >= 1.1.0 for `app_*` env overrides. Full reference:
+Requires `@simpleworkjs/conf` >= 1.1.0. Full reference:
 [SSO Manager deployment docs](https://theta42.github.io/sso-manager-node/deployment.html).
 
 ### Bare metal
@@ -53,25 +53,15 @@ The all-in-one image (`Dockerfile`) bundles OpenResty + the Node app + Redis:
 ```bash
 git clone https://github.com/theta42/proxy.git
 cd proxy
-# Wire it to an external SSO + LDAP via app_* env (or nodejs/conf/secrets.js):
-cat > .env <<EOF
-app_oidc__issuer=https://sso.example.com
-app_oidc__authorizationEndpoint=https://sso.example.com/oauth/authorize
-app_oidc__endSessionEndpoint=https://sso.example.com/oauth/logout
-app_oidc__tokenEndpoint=https://sso.example.com/oauth/token
-app_oidc__userinfoEndpoint=https://sso.example.com/oauth/userinfo
-app_oidc__clientId=...
-app_oidc__clientSecret=...
-app_oidc__redirectUri=https://proxy.example.com/api/auth/oidc/callback
-app_ldap__url=ldaps://sso.example.com:636
-app_ldap__bindDN=cn=ldapclient,ou=people,dc=example,dc=com
-app_ldap__bindPassword=...
-app_ldap__searchBase=ou=people,dc=example,dc=com
-app_ldap__userFilter=(objectClass=posixAccount)
-app_ldap__tlsOptions__rejectUnauthorized=false
-EOF
+mkdir -p config && cp secrets.js.example config/proxy-secrets.js   # edit it
 docker compose up -d --build
 ```
+
+The entrypoint symlinks `config/proxy-secrets.js` to `nodejs/conf/secrets.js` so
+`@simpleworkjs/conf` reads it. Fill in `oidc` (your SSO's endpoints +
+`clientId`/`clientSecret`/`redirectUri`), `ldap` (bind creds + search base), and
+`auth` (admin groups/users). Pass **no `app_*` env** — env beats `secrets.js`,
+so `app_*` would silently override your file.
 
 - Proxy (public, auto-SSL): `https://<host>/`
 - Mgmt UI / API: `http://127.0.0.1:3000/`
@@ -97,12 +87,13 @@ documented in both projects' deployment guides:
 
 1. One Docker network (or reachable hostnames) so the proxy can reach the SSO
    internally for token/userinfo + LDAPS.
-2. Set the SSO's `OAUTH_ISSUER` / `app_oauth__issuer` to the browser-facing HTTPS
+2. Set the SSO's `oauth.issuer` (in its `secrets.js`) to the browser-facing HTTPS
    URL the proxy serves the SSO at.
 3. Register the proxy as an OIDC client in the SSO, with `redirectUri` matching
-   the proxy's callback.
-4. Point the proxy's `app_ldap__url` at the SSO's LDAPS + create a dedicated
-   `cn=ldapclient` service account.
+   the proxy's callback; put the resulting `clientId`/`clientSecret` in the
+   proxy's `secrets.js`.
+4. Point the proxy's `ldap.url` at the SSO's LDAPS + create a dedicated
+   `cn=ldapclient` service account; set the same password as `bindPassword`.
 
 theta-env just automates those four steps with `./setup.sh`. If you prefer to
 do them by hand (or want the two on separate hosts), follow the standalone
