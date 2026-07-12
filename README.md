@@ -263,5 +263,7 @@ theta-env/
 └── proxy/                # git submodule
 ```
 
-The two submodules pin a known-good version of each project. Update them with
-`git submodule update --remote` (then re-run `setup.sh` to rebuild).
+`./setup.sh` updates both submodules to the latest of their tracked remote
+branch before building, so each run builds current upstream — no manual
+`git submodule update --remote` needed. To lock to the pinned commits (offline
+rebuild, or a deliberate pin), run `SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.

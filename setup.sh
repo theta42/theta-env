@@ -11,16 +11,20 @@
 # .env values), writes ./proxy.env (the proxy's env_file), then starts the proxy.
 #
 # What it does, in order:
-#   1. Validate .env (copy from .env.example if missing) + the REQUIRED values.
-#   2. docker compose up -d sso-manager; wait for /health.
-#   3. docker compose exec sso-manager node /bootstrap/bootstrap.js
+#   1. Update the git submodules to the latest of their tracked remote branch
+#      (so each run builds the newest sso-manager-node + proxy), then verify the
+#      build contexts are present. Skip with SKIP_SUBMODULE_UPDATE=1.
+#   2. Validate .env (copy from .env.example if missing) + the REQUIRED values.
+#   3. docker compose up -d sso-manager; wait for /health.
+#   4. docker compose exec sso-manager node /bootstrap/bootstrap.js
 #      -> prints CLIENT_ID / CLIENT_SECRET / ALREADY_CONFIGURED on stdout.
-#   4. Write ./proxy.env from .env + the bootstrap output (the proxy's app_* env).
-#   5. docker compose up -d proxy; wait for /health.
-#   6. Print the first-admin login + the public URLs.
+#   5. Write ./proxy.env from .env + the bootstrap output (the proxy's app_* env).
+#   6. docker compose up -d proxy; wait for /health.
+#   7. Print the first-admin login + the public URLs.
 #
-# Requires: docker + docker compose (v1 standalone or v2 plugin). The compose
-# file uses `version: '3.8'` + single-level ${VAR} interpolation so v1 works.
+# Requires: git, docker + docker compose (v1 standalone or v2 plugin). The
+# compose file uses `version: '3.8'` + single-level ${VAR} interpolation so v1
+# works.
 
 set -euo pipefail
 
@@ -41,7 +45,34 @@ else
 	die "docker compose not found. Install Docker Compose (v2 plugin or v1 standalone)."
 fi
 
-# ── 1. Load + validate .env ───────────────────────────────────────────────────
+# ── 1. Update submodules to latest, verify build contexts ─────────────────────
+# Pull the newest code for both submodules (sso-manager-node, proxy) so each
+# run builds from current upstream, not whatever was pinned at clone time.
+# `--init` also populates the submodules if the repo was cloned without
+# --recursive; `--remote` checks out the tip of each submodule's tracked remote
+# branch (master, per .gitmodules). Set SKIP_SUBMODULE_UPDATE=1 to lock to the
+# pinned commits (offline rebuild / deliberate pin).
+if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
+	if ! command -v git >/dev/null 2>&1; then
+		die "git not found. Install git, or set SKIP_SUBMODULE_UPDATE=1 to build the pinned submodule commits."
+	fi
+	info "Updating submodules to latest (sso-manager-node, proxy)..."
+	# Fetch + checkout each submodule's remote tip. Don't hard-fail if the fetch
+	# is unreachable (offline) — warn and build whatever's already checked out.
+	if ! git submodule update --init --remote --recursive 2>&1; then
+		warn "git submodule update failed (offline?) — continuing with the currently checked-out code."
+	fi
+else
+	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
+fi
+
+# The compose build contexts must exist or `docker compose build` fails obscurely.
+[[ -f sso-manager-node/Dockerfile.openldap ]] \
+	|| die "sso-manager-node/Dockerfile.openldap missing. Run: git submodule update --init --recursive"
+[[ -f proxy/Dockerfile ]] \
+	|| die "proxy/Dockerfile missing. Run: git submodule update --init --recursive"
+
+# ── 2. Load + validate .env ───────────────────────────────────────────────────
 if [[ ! -f .env ]]; then
 	if [[ -f .env.example ]]; then
 		cp .env.example .env
@@ -127,7 +158,7 @@ info "  SSO host:      https://${SSO_HOST}"
 info "  Proxy host:    https://${PROXY_HOST}"
 info "  Admin uid:     ${BOOTSTRAP_ADMIN_UID}"
 
-# ── 2. Start SSO Manager, wait for health ─────────────────────────────────────
+# ── 3. Start SSO Manager, wait for health ─────────────────────────────────────
 # Compose v2 validates env_file paths for ALL services in the project at load
 # time — including the proxy's ./proxy.env — even when only sso-manager is
 # being started. proxy.env isn't written until step 4 (from the bootstrap
@@ -154,7 +185,7 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
-# ── 3. Run the bootstrap (writes CLIENT_ID/CLIENT_SECRET/ALREADY_CONFIGURED) ──
+# ── 4. Run the bootstrap (writes CLIENT_ID/CLIENT_SECRET/ALREADY_CONFIGURED) ──
 # PROXY_ENV_EXISTS tells the bootstrap whether to rotate the client secret: if
 # proxy.env already holds a secret, keep it (the proxy can still read it); if
 # not, rotate so a wiped-and-restored proxy gets a usable secret. We check for
@@ -189,7 +220,7 @@ ALREADY_CONFIGURED=$(getval ALREADY_CONFIGURED)
 [[ -n "$CLIENT_ID" ]] || die "bootstrap did not return CLIENT_ID:\n${BOOTSTRAP_OUT}"
 [[ -n "$CLIENT_SECRET" ]] || die "bootstrap did not return CLIENT_SECRET:\n${BOOTSTRAP_OUT}"
 
-# ── 4. Write ./proxy.env (the proxy's env_file) ───────────────────────────────
+# ── 5. Write ./proxy.env (the proxy's env_file) ───────────────────────────────
 # All app_* so the proxy reads them via @simpleworkjs/conf (>=1.1.0) env overrides.
 # Browser-facing endpoints use https://${SSO_HOST}; server-to-server
 # token/userinfo use the internal http://sso-manager:3001 (no hairpin through the
@@ -245,7 +276,7 @@ else
 	info "OAuth client registered + proxy.env written."
 fi
 
-# ── 5. Start the proxy, wait for health ───────────────────────────────────────
+# ── 6. Start the proxy, wait for health ───────────────────────────────────────
 info "Building + starting proxy (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build proxy
 
@@ -258,7 +289,7 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
-# ── 6. Summary ───────────────────────────────────────────────────────────────
+# ── 7. Summary ───────────────────────────────────────────────────────────────
 echo
 info "\033[1;32mDone. Your SSO + proxy stack is up.\033[0m"
 echo
