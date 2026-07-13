@@ -334,11 +334,19 @@ backup_before_rebuild() {
 			|| warn "  could not copy $CONFIG_DIR/"
 	fi
 
-	# LDAP — slapcat the live directory while slapd is running.
+	# LDAP — slapcat the live directory while slapd is running. Read the base
+	# DN from the host-side config first (works whether or not the running
+	# container has /config mounted — e.g. a container from before the ./config
+	# bind-mount was added), then fall back to reading it inside the container.
 	if running sso-manager; then
-		local basedn
-		basedn="$("${COMPOSE[@]}" exec -T sso-manager node -e \
-			'console.log((require("/config/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
+		local basedn=""
+		if [[ -f "$CONFIG_DIR/sso-secrets.js" ]] && command -v node >/dev/null 2>&1; then
+			basedn="$(node -e 'console.log((require("'"$PWD/$CONFIG_DIR"'/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
+		fi
+		if [[ -z "$basedn" ]]; then
+			basedn="$("${COMPOSE[@]}" exec -T sso-manager node -e \
+				'console.log((require("/config/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
+		fi
 		if [[ -n "$basedn" ]]; then
 			if "${COMPOSE[@]}" exec -T sso-manager slapcat -f /etc/openldap/slapd.conf \
 					-b "$basedn" > "$dir/ldap.ldif" 2>/dev/null; then
@@ -351,27 +359,34 @@ backup_before_rebuild() {
 		fi
 	fi
 
-	# Redis — hot snapshot each running service: BGSAVE, wait for LASTSAVE to
-	# advance (<=30s), then copy the RDB out.
-	local svc pid
+	# Redis — snapshot each running service. Capture LASTSAVE *before* issuing
+	# BGSAVE: a small dataset finishes in well under a second, so capturing it
+	# afterward races the save and the poll never sees a fresh value (the bug
+	# behind "BGSAVE did not finish in 30s"). BGSAVE is non-blocking but can
+	# fork-fail when the host has vm.overcommit_memory=0; fall back to a
+	# synchronous SAVE (blocks Redis briefly, but can't fork-fail — and we're
+	# about to tear the containers down for a rebuild anyway). Then copy the RDB.
+	local svc before ok
 	for svc in sso-manager proxy; do
 		running "$svc" || continue
-		if ! docker exec "$svc" redis-cli BGSAVE >/dev/null 2>&1; then
-			warn "  $svc: redis-cli BGSAVE failed — not snapshotted"
-			continue
-		fi
-		local before ok=0
 		before="$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || echo 0)"
-		for i in $(seq 1 30); do
+		docker exec "$svc" redis-cli BGSAVE >/dev/null 2>&1 || true
+		ok=0
+		for i in $(seq 1 10); do
 			if [[ "$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9')" -gt "$before" ]]; then
 				ok=1; break
 			fi
 			sleep 1
 		done
+		if [[ "$ok" != "1" ]]; then
+			# BGSAVE didn't advance LASTSAVE in time (fork failure / save already
+			# in progress) — synchronous SAVE. Reply must be "OK".
+			[[ "$(docker exec "$svc" redis-cli SAVE 2>/dev/null | tr -d '\r\n')" == "OK" ]] && ok=1
+		fi
 		if [[ "$ok" == "1" ]] && "${COMPOSE[@]}" cp "$svc:/data/dump.rdb" "$dir/$svc.rdb" >/dev/null 2>&1; then
 			info "  Redis ($svc) -> $svc.rdb"
 		else
-			warn "  $svc: BGSAVE did not finish in 30s — Redis not snapshotted"
+			warn "  $svc: snapshot failed — Redis not snapshotted"
 		fi
 	done
 
