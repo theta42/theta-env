@@ -10,6 +10,11 @@ backups/
 .env
 proxy.env
 
+# setup.env — operator's first-run domain config (copied from setup.env.example,
+# which IS committed). Holds the domain as a base DN; setup.env itself is
+# per-deployment and is not committed.
+setup.env
+
 # Backup artifacts (hold secrets — the whole user directory + Redis dumps)
 *.rdb
 *.ldif
