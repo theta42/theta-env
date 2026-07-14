@@ -330,25 +330,38 @@ backup_before_rebuild() {
 
 	# Config (the secrets source — the most important thing to back up).
 	if [[ -d "$CONFIG_DIR" ]]; then
-		cp -a "$CONFIG_DIR" "$dir/config" 2>/dev/null \
-			|| warn "  could not copy $CONFIG_DIR/"
+		if cp -a "$CONFIG_DIR" "$dir/config" 2>/dev/null; then
+			info "  config -> config/"
+		else
+			warn "  could not copy $CONFIG_DIR/"
+		fi
 	fi
 
 	# LDAP — slapcat the live directory while slapd is running. Read the base
 	# DN from the host-side config first (works whether or not the running
 	# container has /config mounted — e.g. a container from before the ./config
 	# bind-mount was added), then fall back to reading it inside the container.
+	# Use `docker exec <name>` (not `docker-compose exec`) so the snapshot works
+	# no matter which compose project brought the container up — the unified
+	# theta-env stack (project "theta-env") and the standalone submodule stack
+	# (project "sso-manager-node") both name it "sso-manager". `docker-compose
+	# exec` from the superproject otherwise exits 1 silently (wrong project) and
+	# the snapshot silently no-ops.
 	if running sso-manager; then
+		info "  LDAP: snapshotting..."
 		local basedn=""
 		if [[ -f "$CONFIG_DIR/sso-secrets.js" ]] && command -v node >/dev/null 2>&1; then
-			basedn="$(node -e 'console.log((require("'"$PWD/$CONFIG_DIR"'/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
+			# `timeout 5` guards against a malformed secrets.js that blocks at
+			# require() time — without it a bad config would stall the whole
+			# rebuild at this line with no further output.
+			basedn="$(timeout 5 node -e 'console.log((require("'"$PWD/$CONFIG_DIR"'/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
 		fi
 		if [[ -z "$basedn" ]]; then
-			basedn="$("${COMPOSE[@]}" exec -T sso-manager node -e \
+			basedn="$(docker exec sso-manager node -e \
 				'console.log((require("/config/sso-secrets.js").stack||{}).ldapBaseDn||"")' 2>/dev/null || true)"
 		fi
 		if [[ -n "$basedn" ]]; then
-			if "${COMPOSE[@]}" exec -T sso-manager slapcat -f /etc/openldap/slapd.conf \
+			if timeout 20 docker exec sso-manager slapcat -f /etc/openldap/slapd.conf \
 					-b "$basedn" > "$dir/ldap.ldif" 2>/dev/null; then
 				info "  LDAP -> ldap.ldif ($basedn)"
 			else
@@ -365,10 +378,14 @@ backup_before_rebuild() {
 	# behind "BGSAVE did not finish in 30s"). BGSAVE is non-blocking but can
 	# fork-fail when the host has vm.overcommit_memory=0; fall back to a
 	# synchronous SAVE (blocks Redis briefly, but can't fork-fail — and we're
-	# about to tear the containers down for a rebuild anyway). Then copy the RDB.
-	local svc before ok
+	# about to tear the containers down for a rebuild anyway). Then copy the RDB
+	# from Redis's own `dir`/`dbfilename` (not a hardcoded /data/dump.rdb — the
+	# standalone SSO stack keeps it at /app/dump.rdb) via `docker cp` by name, so
+	# it works regardless of which compose project owns the container.
+	local svc before ok rdir rfile rpath
 	for svc in sso-manager proxy; do
 		running "$svc" || continue
+		info "  Redis ($svc): snapshotting..."
 		before="$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || echo 0)"
 		docker exec "$svc" redis-cli BGSAVE >/dev/null 2>&1 || true
 		ok=0
@@ -383,7 +400,12 @@ backup_before_rebuild() {
 			# in progress) — synchronous SAVE. Reply must be "OK".
 			[[ "$(docker exec "$svc" redis-cli SAVE 2>/dev/null | tr -d '\r\n')" == "OK" ]] && ok=1
 		fi
-		if [[ "$ok" == "1" ]] && "${COMPOSE[@]}" cp "$svc:/data/dump.rdb" "$dir/$svc.rdb" >/dev/null 2>&1; then
+		# Redis writes dump.rdb to `dir`/`dbfilename`; ask it where that is so the
+		# copy works across the unified (/data) and standalone (/app) layouts.
+		rdir="$(docker exec "$svc" redis-cli CONFIG GET dir 2>/dev/null | sed -n '2p' | tr -d '\r\n')"
+		rfile="$(docker exec "$svc" redis-cli CONFIG GET dbfilename 2>/dev/null | sed -n '2p' | tr -d '\r\n')"
+		rpath="${rdir:+$rdir/}${rfile:-dump.rdb}"
+		if [[ "$ok" == "1" ]] && docker cp "$svc:$rpath" "$dir/$svc.rdb" >/dev/null 2>&1; then
 			info "  Redis ($svc) -> $svc.rdb"
 		else
 			warn "  $svc: snapshot failed — Redis not snapshotted"
