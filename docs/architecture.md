@@ -104,6 +104,18 @@ inputs from the bind-mounted `./config/sso-secrets.js` + `./config/proxy-secrets
 6. **Build + start the proxy**, wait for `/health`. The proxy entrypoint symlinks
    `./config/proxy-secrets.js` to `/app/conf/secrets.js`, so `@simpleworkjs/conf`
    (≥1.1.0) reads the OAuth creds + LDAP bind creds from the file.
+7. **Register `<SSO_HOST>` and `<PROXY_HOST>` as Host records in the proxy** —
+   `setup.sh` runs a short script inside the proxy container that calls its
+   Host model directly (`Host.create({host, ip, targetPort, ...})`), rather
+   than the proxy's own HTTP API, since no authenticated session exists yet at
+   this point in the run. The proxy routes every hostname purely off a Host
+   record (`ops/nginx_conf/proxy.conf` has no default/self route), so without
+   this step neither URL resolves to anything. `<SSO_HOST>` targets
+   `sso-manager:3001` (the Docker service), `<PROXY_HOST>` targets
+   `127.0.0.1:3000` (the proxy's own management app, same container). Both
+   are created with `sso_enabled: false` — each app already gates its own
+   login, and SSO-gating the SSO's own login page would be circular. Skips a
+   host that already exists, so re-running `setup.sh` is a no-op here.
 
 `setup.sh` then prints the first-admin login + the public URLs.
 

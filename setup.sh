@@ -12,7 +12,8 @@
 # state before rebuild, (re)starts the SSO Manager, runs the bootstrap (which
 # converges the LDAP service account / first admin / OAuth client to the ./config
 # values and writes the generated OAuth client creds into proxy-secrets.js),
-# then starts the proxy.
+# then starts the proxy and registers the SSO's + proxy's own hostnames as
+# Host records in it (otherwise the proxy has no route for either).
 #
 # What it does, in order:
 #   1. Update the git submodules to the latest of their tracked remote branch
@@ -35,7 +36,11 @@
 #         writes the OAuth client creds into ./config/proxy-secrets.js; prints
 #         CLIENT_ID / CLIENT_SECRET / ALREADY_CONFIGURED on stdout.
 #   6. docker compose up -d --build proxy; wait for /health.
-#   7. Print the first-admin login + the public URLs.
+#   7. Register <SSO_HOST> and <PROXY_HOST> as Host records in the proxy (via
+#      `docker compose exec proxy node`, calling the proxy's Host model
+#      directly) so the proxy actually routes those hostnames somewhere —
+#      nothing else creates them. Idempotent; skips a host that already exists.
+#   8. Print the first-admin login + the public URLs.
 #
 # Requires: git, docker + docker compose (v1 standalone or v2 plugin).
 
@@ -548,7 +553,52 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
-# ── 7. Summary ───────────────────────────────────────────────────────────────
+# ── 7. Register the SSO + proxy UIs as Host records in the proxy ──────────────
+# The proxy routes EVERY hostname it serves — including its own management UI
+# and the SSO's UI — off a Host record (ops/nginx_conf/proxy.conf has no
+# default/self route; targetinfo.lua does a lookup for every request, full
+# stop). Nothing else creates these two, so without this step https://<SSO_HOST>
+# and https://<PROXY_HOST> 404 on first run. sso_enabled is left false on both:
+# each app gates its own login already, and SSO-gating the SSO's own login page
+# would be circular. Idempotent — skips a host that already exists.
+info "Registering ${SSO_HOST} and ${PROXY_HOST} with the proxy..."
+HOSTS_OUT=$("${COMPOSE[@]}" exec -T proxy node <<NODEEOF
+const {Host} = require('/app/models').models;
+
+async function ensureHost(host, ip, targetPort) {
+	try {
+		await Host.get(host);
+		console.log('SKIP ' + host + ' (already exists)');
+	} catch (error) {
+		if (error.name !== 'EntryNotFound') throw error;
+		await Host.create({
+			host: host,
+			ip: ip,
+			targetPort: targetPort,
+			forcessl: true,
+			targetssl: false,
+			sso_enabled: false,
+			created_by: 'setup.sh',
+		});
+		console.log('CREATED ' + host + ' -> ' + ip + ':' + targetPort);
+	}
+}
+
+(async () => {
+	try {
+		await ensureHost($(js_str "$SSO_HOST"), 'sso-manager', 3001);
+		await ensureHost($(js_str "$PROXY_HOST"), '127.0.0.1', 3000);
+		process.exit(0);
+	} catch (error) {
+		console.error('ERROR', error.message);
+		process.exit(1);
+	}
+})();
+NODEEOF
+) || die "Registering hosts with the proxy failed:\n${HOSTS_OUT}"
+echo "$HOSTS_OUT" | sed 's/^/[setup] /'
+
+# ── 8. Summary ───────────────────────────────────────────────────────────────
 echo
 info "\033[1;32mDone. Your SSO + proxy stack is up.\033[0m"
 echo
