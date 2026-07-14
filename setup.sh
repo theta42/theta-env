@@ -3,8 +3,9 @@
 # theta-env setup — one-command bring-up of the unified SSO Manager + Proxy stack.
 #
 #   git clone --recursive <theta-env> && cd theta-env
-#   ./setup.sh            # generates ./config/ the first time — edit it, re-run
-#   ./setup.sh            # builds + bootstraps + starts the stack
+#   cp setup.env.example setup.env   # set CFG_BASE_DN to your domain (once)
+#   ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
+#   ./setup.sh            # later runs: rebuilds + bootstraps + starts (config left untouched)
 #
 # Idempotent: safe to re-run. It manages config in a bind-mounted ./config/
 # directory (sso-secrets.js + proxy-secrets.js — NO .env / proxy.env), snapshots
@@ -18,10 +19,13 @@
 #      (so each run builds the newest sso-manager-node + proxy). Skip with
 #      SKIP_SUBMODULE_UPDATE=1.
 #   2. ensure_config: create ./config/sso-secrets.js + proxy-secrets.js if
-#      missing. On a fresh clone they're generated with random secrets and you
-#      must edit them + re-run. On an existing deployment with .env/proxy.env,
-#      the secrets are migrated (preserved) into ./config. If ./config already
-#      exists it is left untouched (the operator owns it).
+#      missing. On a fresh clone the domain/hosts are read from ./setup.env
+#      (the one place the domain is entered, as the LDAP base DN) and both
+#      files are generated with that domain filled in everywhere + random
+#      secrets, then the run proceeds to build (no edit-and-re-run step). On
+#      an existing deployment with .env/proxy.env, the secrets are migrated
+#      (preserved) into ./config. If ./config already exists it is left
+#      untouched (the operator owns it; setup.env is ignored).
 #   3. backup_before_rebuild: snapshot ./config + LDAP (slapcat) + both Redis
 #      (BGSAVE + dump.rdb) to ./backups/<ts>/ before the rebuild. No-op on the
 #      very first run. Keeps the last BACKUP_KEEP (default 5).
@@ -232,23 +236,35 @@ ensure_config() {
 		return 0
 	fi
 
-	# Defaults for a fresh generation. Overridden below by .env/proxy.env if the
-	# operator is migrating from the old .env-based setup.
-	CFG_BASE_DN="${CFG_BASE_DN:-dc=example,dc=com}"
+	# First run: read the domain/hosts from ./setup.env — the ONE place the
+	# domain is entered, as the LDAP base DN (e.g. dc=718it,dc=biz). Hostnames
+	# default to sso.<domain> / proxy.<domain>, derived from it. setup.env is
+	# used ONLY on first run; once ./config/*.js exist they are operator-owned
+	# and setup.env is ignored. Falls back to legacy .env/proxy.env migration
+	# below for existing deployments.
+	if [[ -f ./setup.env ]]; then
+		info "Reading domain/hosts from ./setup.env ..."
+		parse_kv_file ./setup.env
+	fi
+
+	# Bind the CFG_* vars to empty where setup.env / the environment didn't set
+	# them, so the .env migration's `${LDAP_X:-$CFG_X}` defaults below don't trip
+	# `set -u`. Real values come from setup.env, the .env migration, or the
+	# derivation block further down (no example.com placeholders here).
+	CFG_BASE_DN="${CFG_BASE_DN:-}"
 	CFG_DOMAIN="${CFG_DOMAIN:-}"
-	CFG_ORG="${CFG_ORG:-SSO Manager}"
-	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.example.com}"
-	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.example.com}"
-	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
+	CFG_ORG="${CFG_ORG:-}"
+	CFG_SSO_HOST="${CFG_SSO_HOST:-}"
+	CFG_PROXY_HOST="${CFG_PROXY_HOST:-}"
+	CFG_ADMIN_UID="${CFG_ADMIN_UID:-}"
 	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-}"
 	CFG_LDAP_CERT_CN="${CFG_LDAP_CERT_CN:-}"
 	CFG_CLIENT_ID="${CFG_CLIENT_ID:-}"
 	CFG_CLIENT_SECRET="${CFG_CLIENT_SECRET:-}"
-	# Random secrets (generated fresh unless migrated from .env below).
-	CFG_LDAP_ADMIN_PASS="${CFG_LDAP_ADMIN_PASS:-$(rand_hex 16)}"
-	CFG_JWT_SECRET="${CFG_JWT_SECRET:-$(rand_hex 32)}"
-	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-$(rand_hex 16)}"
-	CFG_SVC_PASS="${CFG_SVC_PASS:-$(rand_hex 16)}"
+	CFG_LDAP_ADMIN_PASS="${CFG_LDAP_ADMIN_PASS:-}"
+	CFG_JWT_SECRET="${CFG_JWT_SECRET:-}"
+	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
+	CFG_SVC_PASS="${CFG_SVC_PASS:-}"
 
 	# ── One-time migration from .env / proxy.env (existing deployments) ──
 	# Preserve the operator's existing secrets so the running deployment keeps
@@ -287,7 +303,26 @@ ensure_config() {
 		[[ -n "$pbp" ]] && CFG_SVC_PASS="$pbp"
 		migrated=1
 	fi
-	[[ -n "$CFG_ADMIN_EMAIL" ]] || CFG_ADMIN_EMAIL="admin@${CFG_PROXY_HOST}"
+
+	# Derive everything from the base DN — the one domain value. No example.com
+	# defaults: a blank base DN means first-run setup hasn't been done yet.
+	[[ -n "$CFG_BASE_DN" ]] \
+		|| die "First run: 'cp setup.env.example setup.env', set CFG_BASE_DN to your domain (e.g. dc=718it,dc=biz), then re-run ./setup.sh"
+	CFG_DOMAIN="${CFG_DOMAIN:-$(domain_from_dn "$CFG_BASE_DN")}"
+	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.$CFG_DOMAIN}"
+	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.$CFG_DOMAIN}"
+	CFG_ORG="${CFG_ORG:-SSO Manager}"
+	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
+	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-admin@$CFG_PROXY_HOST}"
+	CFG_LDAP_CERT_CN="${CFG_LDAP_CERT_CN:-}"
+	CFG_CLIENT_ID="${CFG_CLIENT_ID:-}"
+	CFG_CLIENT_SECRET="${CFG_CLIENT_SECRET:-}"
+	# Random secrets (generated fresh unless sourced/migrated above). These do
+	# NOT belong in setup.env — they're written into ./config/*.js only.
+	CFG_LDAP_ADMIN_PASS="${CFG_LDAP_ADMIN_PASS:-$(rand_hex 16)}"
+	CFG_JWT_SECRET="${CFG_JWT_SECRET:-$(rand_hex 32)}"
+	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-$(rand_hex 16)}"
+	CFG_SVC_PASS="${CFG_SVC_PASS:-$(rand_hex 16)}"
 
 	mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR"
 	write_sso_secrets
@@ -298,13 +333,8 @@ ensure_config() {
 		info "Migrated secrets into $CONFIG_DIR/ (existing LDAP dir / JWT / OAuth client preserved)."
 		info "You may now delete .env and proxy.env — they are no longer used."
 	else
-		# Fresh generation with placeholder hostnames — the operator must edit.
-		info "Generated $CONFIG_DIR/sso-secrets.js + proxy-secrets.js with random secrets."
-		warn "EDIT $CONFIG_DIR/sso-secrets.js (set stack.ssoHost, stack.proxyHost, stack.ldapBaseDn,"
-		warn "  bootstrap.adminUid/adminPass to your values), then re-run ./setup.sh."
-		info "Re-run ./setup.sh after editing. (LDAP admin pass + JWT were generated for you —"
-		info "change them in the file if you like, or leave them.)"
-		exit 0
+		info "Generated $CONFIG_DIR/sso-secrets.js + proxy-secrets.js from ./setup.env (domain=$CFG_DOMAIN)."
+		info "Edit $CONFIG_DIR/*.js to change secrets later; re-run ./setup.sh to rebuild."
 	fi
 }
 

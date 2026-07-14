@@ -55,6 +55,11 @@ real TLS certificates for it via Let's Encrypt. A `.local` or made-up name only
 gets you a self-signed cert (browsers will warn — fine for testing, painful for
 daily use).
 
+The domain is the **one** value you set in `setup.env` (as the LDAP base DN,
+e.g. `CFG_BASE_DN=dc=lab,dc=example,dc=com` for `lab.example.com`) — see
+*Quickstart*. The SSO/proxy hostnames default to `sso.<domain>` /
+`proxy.<domain>`, derived from it.
+
 ### 2. At least two hostnames, pointing at your public IP
 
 You need a DNS **`A` record** for each hostname you want the stack to serve,
@@ -109,15 +114,18 @@ standalone (`docker-compose`) both work.
 ```bash
 git clone --recursive https://github.com/theta42/theta-env.git
 cd theta-env
-./setup.sh            # generates ./config/ the first time — edit it, then re-run
-./setup.sh            # builds + bootstraps + starts the stack
+cp setup.env.example setup.env     # then edit setup.env: set CFG_BASE_DN to your domain
+./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 ```
 
-The first `./setup.sh` generates `./config/sso-secrets.js` +
-`./config/proxy-secrets.js` with random secrets and **exits**, telling you to
-edit them. Set at least `stack.ssoHost`, `stack.proxyHost`, `stack.ldapBaseDn`,
-and `bootstrap.adminUid`/`adminPass` in `sso-secrets.js`, then re-run. The second
-run builds and brings up the stack.
+Your domain is entered **once**, as the LDAP base DN in `setup.env` (e.g.
+`CFG_BASE_DN=dc=lab,dc=example,dc=com` for the domain `lab.example.com`). The
+first `./setup.sh` reads `setup.env` and generates `./config/sso-secrets.js` +
+`./config/proxy-secrets.js` with that domain filled in everywhere (hostnames
+default to `sso.<domain>` / `proxy.<domain>`) plus random secrets, then builds
+and brings up the stack in the same run — no edit-and-re-run step.
+`setup.env` is used only on that first run; once `./config/*.js` exist they are
+operator-owned and `setup.env` is ignored.
 
 `./setup.sh` is idempotent — re-run it any time to converge the stack to
 `./config/`. It:
@@ -149,7 +157,8 @@ read by each app's `@simpleworkjs/conf` from a symlinked `secrets.js`:
   `clientId`/`clientSecret` — filled in by the bootstrap), `ldap` (bind creds,
   same `serviceAccountPass`), `auth` (admin groups/users).
 
-`./setup.sh` generates both on first run with random secrets. There is **no
+`./setup.sh` generates both on first run from `./setup.env` (the one place the
+domain is entered — see *Quickstart*) with random secrets. There is **no
 `.env` / `proxy.env`** — edit `./config/*.js` directly. Compose only interpolates
 port defaults (`SSO_PORT`, `HTTP_PORT`, etc.), which you can override on the
 command line: `SSO_BIND=127.0.0.1 ./setup.sh`. See `config.example/` for the
@@ -419,6 +428,7 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 
 ```
 theta-env/
+├── setup.env.example   # first-run config template — cp to setup.env, set CFG_BASE_DN
 ├── config.example/      # committed annotated config templates (copy to ./config/)
 ├── docker-compose.yml   # sso-manager + proxy on one bridge net
 ├── setup.sh             # one-command idempotent bring-up (manages ./config/ + backups)
@@ -428,9 +438,9 @@ theta-env/
 └── proxy/               # git submodule
 ```
 
-`./setup.sh` generates the gitignored `./config/` (`sso-secrets.js` +
-`proxy-secrets.js`) on first run and snapshots to the gitignored `./backups/`
-before each rebuild.
+`./setup.sh` reads the gitignored `setup.env` on first run to generate the
+gitignored `./config/` (`sso-secrets.js` + `proxy-secrets.js`) and snapshots to
+the gitignored `./backups/` before each rebuild.
 
 `./setup.sh` updates both submodules to the latest of their tracked remote
 branch before building, so each run builds current upstream — no manual

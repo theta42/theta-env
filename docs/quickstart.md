@@ -32,32 +32,36 @@ step. If you forgot it:
 git submodule update --init --recursive
 ```
 
-## 2. Configure `./config/`
+## 2. Configure `setup.env` (enter your domain once)
 
 ```bash
-./setup.sh        # generates ./config/ with random secrets, then exits
+cp setup.env.example setup.env
+$EDITOR setup.env      # set CFG_BASE_DN to your domain, as a base DN
 ```
 
-The first `./setup.sh` generates `./config/sso-secrets.js` +
-`./config/proxy-secrets.js` and **exits**, telling you to edit. Edit
-`./config/sso-secrets.js` and at minimum set:
+Your domain is entered **once**, as the LDAP base DN. The SSO/proxy hostnames
+default to `sso.<domain>` / `proxy.<domain>`, derived from it, so for most setups
+`CFG_BASE_DN` is the only value you set:
 
-| Key (in `sso-secrets.js`) | Example | Notes |
+| `setup.env` key | Example | Notes |
 |-----|---------|-------|
-| `stack.ldapBaseDn` | `dc=lab,dc=local` | your directory base |
-| `stack.ssoHost` | `sso.lab.local` | hostname the proxy serves the SSO UI at |
-| `stack.proxyHost` | `proxy.lab.local` | hostname the proxy serves its own UI at |
-| `bootstrap.adminUid` | `admin` | your first admin login |
-| `bootstrap.adminPass` | `...` | first admin password |
+| `CFG_BASE_DN` | `dc=lab,dc=local` | your directory base — **required** |
+| `CFG_SSO_HOST` | `sso.lab.local` | optional, defaults to `sso.<domain>` |
+| `CFG_PROXY_HOST` | `proxy.lab.local` | optional, defaults to `proxy.<domain>` |
+| `CFG_ADMIN_UID` | `admin` | optional, defaults to `admin` |
+| `CFG_ADMIN_EMAIL` | `admin@<proxyHost>` | optional |
 
-Random secrets (`ldap.bindPassword`, `oauth.jwtSecret`, `serviceAccountPass`)
-are generated for you — change them in the file if you like. Optional:
-`bootstrap.adminEmail`, `smtp.*`, `stack.ldapCertCn`. See `config.example/` for
-the full annotated shape, and each submodule's `secrets.js.example`.
+`setup.env` is used **only on the first run** to generate `./config/`; after
+that `./config/*.js` are operator-owned and `setup.env` is ignored. Secrets
+(LDAP admin password, JWT, admin password, service-account password) are
+**generated** into `./config/*.js` on first run — do **not** put them in
+`setup.env`. See `setup.env.example` for the full annotated shape, and
+`config.example/` + each submodule's `secrets.js.example` for the generated
+file shape.
 
 > **Migrating from an older `.env`-based deployment?** If `.env`/`proxy.env`
 > exist, `./setup.sh` migrates them into `./config/` preserving your existing
-> secrets — no need to reconfigure.
+> secrets — no need to write a `setup.env`.
 
 ## 3. Run
 
@@ -65,6 +69,9 @@ the full annotated shape, and each submodule's `secrets.js.example`.
 ./setup.sh
 ```
 
+The first run reads `setup.env`, generates `./config/sso-secrets.js` +
+`./config/proxy-secrets.js` with your domain filled in everywhere plus random
+secrets, then builds and starts the stack in the same run (no edit-and-re-run).
 What happens:
 
 1. Snapshots state to `./backups/<timestamp>/` before rebuilding (a no-op on the
