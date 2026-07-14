@@ -3,7 +3,7 @@
 # theta-env setup — one-command bring-up of the unified SSO Manager + Proxy stack.
 #
 #   git clone --recursive <theta-env> && cd theta-env
-#   cp setup.env.example setup.env   # set CFG_BASE_DN to your domain (once)
+#   cp setup.env.example setup.env   # set CFG_DOMAIN to your domain (once)
 #   ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 #   ./setup.sh            # later runs: rebuilds + bootstraps + starts (config left untouched)
 #
@@ -20,9 +20,10 @@
 #      SKIP_SUBMODULE_UPDATE=1.
 #   2. ensure_config: create ./config/sso-secrets.js + proxy-secrets.js if
 #      missing. On a fresh clone the domain/hosts are read from ./setup.env
-#      (the one place the domain is entered, as the LDAP base DN) and both
-#      files are generated with that domain filled in everywhere + random
-#      secrets, then the run proceeds to build (no edit-and-re-run step). On
+#      (the one place the domain is entered, as a plain DNS domain — the LDAP
+#      base DN is derived from it) and both files are generated with that
+#      domain filled in everywhere + random secrets, then the run proceeds to
+#      build (no edit-and-re-run step). On
 #      an existing deployment with .env/proxy.env, the secrets are migrated
 #      (preserved) into ./config. If ./config already exists it is left
 #      untouched (the operator owns it; setup.env is ignored).
@@ -125,9 +126,20 @@ fi
 	|| die "proxy/Dockerfile missing. Run: git submodule update --init --recursive"
 
 # ── 2. ensure_config ──────────────────────────────────────────────────────────
-# Derive a DNS domain from a base DN (dc=foo,dc=bar -> foo.bar).
+# Derive a DNS domain from a base DN (dc=foo,dc=bar -> foo.bar). Only used to
+# read domain back out of a base DN set directly (advanced override, or an
+# old setup.env / migrated .env) — the normal path is dn_from_domain below.
 domain_from_dn() {
 	echo "$1" | sed 's/^dc=//; s/,dc=/./g'
+}
+
+# Derive an LDAP base DN from a DNS domain (foo.bar -> dc=foo,dc=bar). This is
+# the normal path: operators enter a plain domain in setup.env (CFG_DOMAIN),
+# and the base DN is built from it, however many labels it has (a DuckDNS
+# domain like foo.duckdns.org becomes dc=foo,dc=duckdns,dc=org — LDAP doesn't
+# care how many dc= components there are).
+dn_from_domain() {
+	echo "dc=$1" | sed 's/\./,dc=/g'
 }
 
 # Write ./config/sso-secrets.js from the CFG_* shell vars.
@@ -237,8 +249,9 @@ ensure_config() {
 	fi
 
 	# First run: read the domain/hosts from ./setup.env — the ONE place the
-	# domain is entered, as the LDAP base DN (e.g. dc=718it,dc=biz). Hostnames
-	# default to sso.<domain> / proxy.<domain>, derived from it. setup.env is
+	# domain is entered (e.g. 718it.biz), as a plain DNS domain; the LDAP base
+	# DN is derived from it (dc=718it,dc=biz). Hostnames default to
+	# sso.<domain> / proxy.<domain>, also derived from it. setup.env is
 	# used ONLY on first run; once ./config/*.js exist they are operator-owned
 	# and setup.env is ignored. Falls back to legacy .env/proxy.env migration
 	# below for existing deployments.
@@ -304,11 +317,15 @@ ensure_config() {
 		migrated=1
 	fi
 
-	# Derive everything from the base DN — the one domain value. No example.com
-	# defaults: a blank base DN means first-run setup hasn't been done yet.
-	[[ -n "$CFG_BASE_DN" ]] \
-		|| die "First run: 'cp setup.env.example setup.env', set CFG_BASE_DN to your domain (e.g. dc=718it,dc=biz), then re-run ./setup.sh"
-	CFG_DOMAIN="${CFG_DOMAIN:-$(domain_from_dn "$CFG_BASE_DN")}"
+	# Derive everything from the domain — the one value operators enter. No
+	# example.com defaults: a blank domain means first-run setup hasn't been
+	# done yet. CFG_BASE_DN can still be set directly (setup.env or a migrated
+	# .env) to override the derived DN or to read the domain back out of an
+	# old-style DN-first setup.env; if not, it's built from CFG_DOMAIN.
+	CFG_DOMAIN="${CFG_DOMAIN:-$([[ -n "$CFG_BASE_DN" ]] && domain_from_dn "$CFG_BASE_DN" || true)}"
+	[[ -n "$CFG_DOMAIN" ]] \
+		|| die "First run: 'cp setup.env.example setup.env', set CFG_DOMAIN to your domain (e.g. example.com), then re-run ./setup.sh"
+	CFG_BASE_DN="${CFG_BASE_DN:-$(dn_from_domain "$CFG_DOMAIN")}"
 	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.$CFG_DOMAIN}"
 	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.$CFG_DOMAIN}"
 	CFG_ORG="${CFG_ORG:-SSO Manager}"

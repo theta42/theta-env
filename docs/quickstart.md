@@ -42,20 +42,23 @@ git submodule update --init --recursive
 
 ```bash
 cp setup.env.example setup.env
-$EDITOR setup.env      # set CFG_BASE_DN to your domain, as a base DN
+$EDITOR setup.env      # set CFG_DOMAIN to your domain
 ```
 
-Your domain is entered **once**, as the LDAP base DN. The SSO/proxy hostnames
-default to `sso.<domain>` / `proxy.<domain>`, derived from it, so for most setups
-`CFG_BASE_DN` is the only value you set:
+Your domain is entered **once**, as a plain DNS domain. The SSO/proxy
+hostnames default to `sso.<domain>` / `proxy.<domain>`, and the LDAP base DN
+is built from it (any number of labels works — a domain like
+`myhost.duckdns.org` becomes `dc=myhost,dc=duckdns,dc=org`), so for most
+setups `CFG_DOMAIN` is the only value you set:
 
 | `setup.env` key | Example | Notes |
 |-----|---------|-------|
-| `CFG_BASE_DN` | `dc=lab,dc=local` | your directory base — **required** |
+| `CFG_DOMAIN` | `lab.local` | your domain — **required** |
 | `CFG_SSO_HOST` | `sso.lab.local` | optional, defaults to `sso.<domain>` |
 | `CFG_PROXY_HOST` | `proxy.lab.local` | optional, defaults to `proxy.<domain>` |
 | `CFG_ADMIN_UID` | `admin` | optional, defaults to `admin` |
 | `CFG_ADMIN_EMAIL` | `admin@<proxyHost>` | optional |
+| `CFG_BASE_DN` | `dc=lab,dc=local` | advanced: override the derived LDAP base DN |
 
 `setup.env` is used **only on the first run** to generate `./config/`; after
 that `./config/*.js` are operator-owned and `setup.env` is ignored. Secrets

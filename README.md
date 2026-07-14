@@ -64,10 +64,10 @@ real TLS certificates for it via Let's Encrypt. A `.local` or made-up name only
 gets you a self-signed cert (browsers will warn — fine for testing, painful for
 daily use).
 
-The domain is the **one** value you set in `setup.env` (as the LDAP base DN,
-e.g. `CFG_BASE_DN=dc=lab,dc=example,dc=com` for `lab.example.com`) — see
-*Quickstart*. The SSO/proxy hostnames default to `sso.<domain>` /
-`proxy.<domain>`, derived from it.
+The domain is the **one** value you set in `setup.env` (e.g.
+`CFG_DOMAIN=lab.example.com`) — see *Quickstart*. The SSO/proxy hostnames
+default to `sso.<domain>` / `proxy.<domain>`, and the LDAP base DN
+(`dc=lab,dc=example,dc=com`) is built from it automatically.
 
 ### 2. At least two hostnames, pointing at your public IP
 
@@ -123,12 +123,13 @@ standalone (`docker-compose`) both work.
 ```bash
 git clone --recursive https://github.com/theta42/theta-env.git
 cd theta-env
-cp setup.env.example setup.env     # then edit setup.env: set CFG_BASE_DN to your domain
+cp setup.env.example setup.env     # then edit setup.env: set CFG_DOMAIN to your domain
 ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 ```
 
-Your domain is entered **once**, as the LDAP base DN in `setup.env` (e.g.
-`CFG_BASE_DN=dc=lab,dc=example,dc=com` for the domain `lab.example.com`). The
+Your domain is entered **once** in `setup.env` (e.g.
+`CFG_DOMAIN=lab.example.com`) — the LDAP base DN (`dc=lab,dc=example,dc=com`)
+is derived from it, however many labels it has. The
 first `./setup.sh` reads `setup.env` and generates `./config/sso-secrets.js` +
 `./config/proxy-secrets.js` with that domain filled in everywhere (hostnames
 default to `sso.<domain>` / `proxy.<domain>`) plus random secrets, then builds
@@ -441,7 +442,7 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 
 ```
 theta-env/
-├── setup.env.example   # first-run config template — cp to setup.env, set CFG_BASE_DN
+├── setup.env.example   # first-run config template — cp to setup.env, set CFG_DOMAIN
 ├── config.example/      # committed annotated config templates (copy to ./config/)
 ├── docker-compose.yml   # sso-manager + proxy on one bridge net
 ├── setup.sh             # one-command idempotent bring-up (manages ./config/ + backups)
