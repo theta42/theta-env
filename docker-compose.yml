@@ -103,6 +103,10 @@ services:
       - proxy-data:/data
       - proxy-cache:/var/cache/nginx/proxy
       - proxy-logs:/var/log/nginx
+      # OPTIONAL, for strict LDAPS trust (see README "Security notes"): mount
+      # the SSO's self-signed cert into the proxy read-only, then set
+      # ldap.tlsOptions.ca=<path-below> in ./config/proxy-secrets.js.
+      # - ldap-certs:/etc/ssl/sso-ldap-certs:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
       interval: 30s

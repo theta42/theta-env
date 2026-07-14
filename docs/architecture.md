@@ -11,6 +11,8 @@ theta-env is a **composition** repo: it builds the two existing projects from
 their git submodules and adds the glue that wires them together. It does not
 fork or patch them — both projects work unchanged on their own.
 
+---
+
 ## The three repos
 
 | Repo | Role |
@@ -21,6 +23,8 @@ fork or patch them — both projects work unchanged on their own.
 
 The two projects are pinned as **git submodules**. `git clone --recursive`
 fetches all three in one step; `git submodule update --remote` bumps them.
+
+---
 
 ## The two containers
 
@@ -67,6 +71,8 @@ redis instances is the no-source-patch path and is fine at this scale.
 | `636` (sso) | yes | LDAPS for legacy direct-LDAP clients |
 | `3001` (sso) | localhost only | SSO web UI (first-run convenience; fronted by the proxy normally) |
 | `389` (sso) | **no** | plain LDAP — internal only (app↔slapd over localhost) |
+
+---
 
 ## The first-run bootstrap
 
@@ -127,6 +133,8 @@ admin creds from `./config/sso-secrets.js` sidesteps that entirely, and going
 through the HTTP API for the OAuth client validates the whole admin login path
 end-to-end.
 
+---
+
 ## Idempotency
 
 Re-running `./setup.sh` converges to `./config/`:
@@ -138,6 +146,8 @@ Re-running `./setup.sh` converges to `./config/`:
 
 So `setup.sh` is safe to re-run after editing `./config/`, after a `docker
 compose down`, or after restoring from backup.
+
+---
 
 ## Backups and restore
 
