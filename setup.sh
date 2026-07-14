@@ -7,15 +7,23 @@
 #   ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 #   ./setup.sh            # later runs: rebuilds + bootstraps + starts (config left untouched)
 #
-# Idempotent: safe to re-run. It manages config in a bind-mounted ./config/
-# directory (sso-secrets.js + proxy-secrets.js — NO .env / proxy.env), snapshots
-# state before rebuild, (re)starts the SSO Manager, runs the bootstrap (which
+# Idempotent: safe to re-run. It pulls its own latest version, updates the two
+# submodules, manages config in a bind-mounted ./config/ directory
+# (sso-secrets.js + proxy-secrets.js — NO .env / proxy.env), snapshots state
+# before rebuild, (re)starts the SSO Manager, runs the bootstrap (which
 # converges the LDAP service account / first admin / OAuth client to the ./config
 # values and writes the generated OAuth client creds into proxy-secrets.js),
 # then starts the proxy and registers the SSO's + proxy's own hostnames as
-# Host records in it (otherwise the proxy has no route for either).
+# Host records in it (otherwise the proxy has no route for either). A single
+# `./setup.sh` run is enough to bring an existing deployment fully up to date —
+# no manual `git pull` needed first.
 #
 # What it does, in order:
+#   0. Pull theta-env's own latest commit (fast-forward only) and, if it
+#      moved, re-exec so the rest of this run uses the new script. Never
+#      blocks the run — skips silently with no upstream, warns and continues
+#      on any other pull failure (offline, local changes). Skip with
+#      SKIP_SELF_UPDATE=1.
 #   1. Update the git submodules to the latest of their tracked remote branch
 #      (so each run builds the newest sso-manager-node + proxy). Skip with
 #      SKIP_SUBMODULE_UPDATE=1.
@@ -111,6 +119,32 @@ parse_kv_file() {
 		export "$key=$val"
 	done < "$file"
 }
+
+# ── 0. Self-update: pull theta-env itself, then restart with the new version ──
+# Step 1 below only refreshes the proxy/sso-manager-node submodules — it never
+# updates setup.sh or this repo's own files. Pull the current branch's
+# upstream (fast-forward only) before anything else, and if it moved, re-exec
+# so the rest of THIS run uses the freshly-pulled script rather than the copy
+# already read into memory. Never blocks the run: skips silently if this
+# isn't a git checkout, is on a detached HEAD, or has no upstream configured;
+# warns (but continues on the current checkout) if the pull fails for any
+# other reason (offline, local changes that prevent a fast-forward). Skip
+# entirely with SKIP_SELF_UPDATE=1.
+if [[ "${SKIP_SELF_UPDATE:-0}" != "1" && "${THETA_ENV_REEXECED:-0}" != "1" ]] \
+	&& command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+	&& git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1
+then
+	BEFORE_REV="$(git rev-parse HEAD)"
+	if git pull --ff-only -q; then
+		AFTER_REV="$(git rev-parse HEAD)"
+		if [[ "$BEFORE_REV" != "$AFTER_REV" ]]; then
+			info "Updated theta-env (${BEFORE_REV:0:12} -> ${AFTER_REV:0:12}) — restarting setup.sh with the new version..."
+			THETA_ENV_REEXECED=1 exec "$0" "$@"
+		fi
+	else
+		warn "Could not fast-forward theta-env to the latest upstream (offline, or local changes) — continuing with the current checkout."
+	fi
+fi
 
 # ── 1. Update submodules to latest, verify build contexts ─────────────────────
 if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
