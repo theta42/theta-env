@@ -11,6 +11,8 @@ theta-env composes the two projects but doesn't fork them — both work on their
 own. The submodules in this repo are normal clones; you can also clone them
 directly from GitHub.
 
+---
+
 ## SSO Manager alone
 
 The all-in-one image (`Dockerfile.openldap`) bundles the app + OpenLDAP + Redis:
@@ -46,6 +48,8 @@ sudo systemctl enable --now sso-manager
 Idempotent — re-run to update. See the SSO Manager
 [deployment guide](https://theta42.github.io/sso-manager-node/deployment.html).
 
+---
+
 ## Proxy alone
 
 The all-in-one image (`Dockerfile`) bundles OpenResty + the Node app + Redis:
@@ -70,6 +74,33 @@ so `app_*` would silently override your file.
 Requires `@simpleworkjs/conf` >= 1.1.0. Full reference:
 [proxy deployment docs](https://theta42.github.io/proxy/docker.html).
 
+### The `auth.adminUsers` anti-lockout account
+
+Both `setup.sh` and `config.example/proxy-secrets.js.example` write
+`auth.adminUsers: ['proxyadmin2']` into `proxy-secrets.js`. This is a
+**local, config-driven admin bypass** — the proxy grants full admin rights to
+any logged-in OIDC user whose username (the `preferred_username` claim from
+the SSO) matches an entry in `auth.adminUsers`, regardless of their LDAP group
+membership (see `proxy/nodejs/utils/roles.js`, `resolveEffective()`). It exists
+so an operator can't lock themselves out of the proxy mgmt UI if the SSO's
+`app_sso_admin` group is ever misconfigured, deleted, or otherwise broken.
+
+It is **not** derived from any `setup.env` value, and it does **not** create a
+user by itself — the name is only a username match. To actually use the
+bypass, create a user with uid `proxyadmin2` in the SSO (it does not need to
+be in `app_sso_admin` or any other group) and log in through the proxy as that
+user.
+
+To change or disable it, edit `auth.adminUsers` directly in
+`./config/proxy-secrets.js` after the first `./setup.sh` run (re-running
+`setup.sh` will not overwrite an existing `proxy-secrets.js`):
+
+- **Rename** it to a less guessable username: `adminUsers: ['your-break-glass-uid']`.
+- **Add more** anti-lockout accounts: `adminUsers: ['proxyadmin2', 'another-admin']`.
+- **Disable** it entirely: `adminUsers: []` (global admin then comes only from
+  `auth.adminGroups` membership — make sure at least one real admin group is
+  reachable before doing this).
+
 ### Bare metal
 
 ```bash
@@ -79,6 +110,8 @@ wget -O - https://raw.githubusercontent.com/theta42/proxy/master/ops/install.sh 
 See the proxy
 [Docker guide](https://theta42.github.io/proxy/docker.html) /
 [installation guide](https://theta42.github.io/proxy/installation.html).
+
+---
 
 ## Mixing and matching
 

@@ -16,6 +16,15 @@ Each project still runs **standalone** (`docker compose up` in its own folder);
 this repo just composes them and automates the first-run glue so they find each
 other.
 
+**Why use this instead of running the two separately?** The two only become
+useful once the proxy is registered as an OIDC client of the SSO and pointed at
+the SSO's LDAP directory — and the SSO's domain has to match across half a dozen
+config fields or logins silently fail with `Invalid Credentials`. Doing that by
+hand is fiddly and easy to get wrong. `setup.sh` asks for your domain once (in
+`setup.env`), generates both config files with it filled in everywhere, registers
+the proxy as an OIDC client, and snapshots state before every rebuild — so you
+get a working SSO + proxy stack in one command and a safe way to upgrade it.
+
 ```
             ┌──────────────────────────────────────────────┐
             │  your browser / apps                          │
@@ -412,8 +421,12 @@ exactly in the bootstrap) so the SSO can verify them on bind.
    off-host (see *Backups and restore*).
 3. **LDAPS uses the SSO's self-signed cert by default.** The proxy binds with
    `ldap.tlsOptions.rejectUnauthorized=false` (in `proxy-secrets.js`). For strict
-   trust, mount the SSO's cert (`ldap-certs` volume) into the proxy and set
-   `ldap.tlsOptions.ca=<path>` in `./config/proxy-secrets.js`.
+   trust, this is a **two-step change, not config-only**: (a) edit
+   `docker-compose.yml` to also mount the `ldap-certs` volume into the `proxy`
+   service (it's currently only mounted into `sso-manager`) — see the
+   commented-out boilerplate in the `proxy` service's `volumes:` block — then
+   (b) set `ldap.tlsOptions.ca=<path>` in `./config/proxy-secrets.js` to the
+   mounted cert path and `docker compose up -d proxy` to pick up the new mount.
 4. **Re-running `setup.sh` resets the bootstrap admin + service passwords to
    the `./config/` values.** If you change a user's password in the SSO UI
    later, re-running `setup.sh` will reset the bootstrap admin's password back

@@ -14,13 +14,15 @@ It exists for people whose needs are met by these two projects and who want to
 run them "very simply." Each project still works **standalone**; this repo just
 wires them together and automates the first-run glue.
 
+---
+
 ## Quick start
 
 ```bash
 git clone --recursive https://github.com/theta42/theta-env.git
 cd theta-env
-./setup.sh        # generates ./config/ the first time — edit it, then re-run
-./setup.sh        # builds + bootstraps + starts the stack
+cp setup.env.example setup.env     # then edit setup.env: set CFG_BASE_DN to your domain
+./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 ```
 
 You need **Docker** + **Docker Compose**. `./setup.sh` is idempotent — re-run any
@@ -29,6 +31,8 @@ time to converge the stack to `./config/`.
 See the [Quickstart Guide](quickstart.html) for a walkthrough of `./config/` and
 what `setup.sh` does, [Architecture](architecture.html) for how the pieces fit
 together, and [Standalone](standalone.html) for running each project on its own.
+
+---
 
 ## What you get
 
@@ -43,6 +47,8 @@ together, and [Standalone](standalone.html) for running each project on its own.
   API from scripts/CI without a browser session. A token authenticates as its
   creator (carrying their permissions); mint/rotate/revoke under **API Tokens**
   in each UI. See each submodule's DEPLOYMENT for the details.
+
+---
 
 ## The `./config/` values you must set
 
@@ -61,6 +67,8 @@ There is **no `.env`**. Set at least these in `./config/sso-secrets.js`:
 
 See `config.example/` for the full annotated shape (SMTP, LDAP cert CN, proxy
 OIDC/LDAP/auth, …).
+
+---
 
 ## Architecture
 
@@ -88,6 +96,8 @@ The proxy is **both** an OIDC client of the SSO (for login) **and** a direct LDA
 client (for user lookups). See [Architecture](architecture.html) for the full
 diagram + the first-run bootstrap flow.
 
+---
+
 ## Documentation
 
 - [Quickstart Guide](quickstart.html) — full walkthrough of `./config/` + `setup.sh`.
@@ -95,10 +105,14 @@ diagram + the first-run bootstrap flow.
   design, and how the bootstrap wires the proxy into a fresh SSO.
 - [Standalone](standalone.html) — running SSO Manager or the proxy on its own.
 
+---
+
 ## Community
 
 - [GitHub Repository](https://github.com/theta42/theta-env)
 - [Issue Tracker](https://github.com/theta42/theta-env/issues)
+
+---
 
 ## License
 

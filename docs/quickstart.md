@@ -7,6 +7,8 @@ title: Quickstart
 
 [← Back to Home](index.html)
 
+---
+
 ## Prerequisites
 
 - A Linux host with **Docker** + **Docker Compose** (the v2 plugin `docker
@@ -17,6 +19,8 @@ title: Quickstart
 - Port **80 + 443** reachable from the internet if you want Let's Encrypt
   certs; otherwise the proxy serves a self-signed fallback (browsers warn —
   expected for LAN use).
+
+---
 
 ## 1. Clone
 
@@ -31,6 +35,8 @@ step. If you forgot it:
 ```bash
 git submodule update --init --recursive
 ```
+
+---
 
 ## 2. Configure `setup.env` (enter your domain once)
 
@@ -63,6 +69,8 @@ file shape.
 > exist, `./setup.sh` migrates them into `./config/` preserving your existing
 > secrets — no need to write a `setup.env`.
 
+---
+
 ## 3. Run
 
 ```bash
@@ -86,6 +94,8 @@ What happens:
 The first run builds two Docker images (a few minutes). Subsequent runs are
 fast.
 
+---
+
 ## 4. Point DNS at the host
 
 `stack.ssoHost` and `stack.proxyHost` (from `./config/sso-secrets.js`) must
@@ -97,6 +107,8 @@ echo "127.0.0.1 sso.lab.local proxy.lab.local" | sudo tee -a /etc/hosts
 
 (The proxy needs port 80 reachable for Let's Encrypt; on a LAN without that it
 serves a self-signed cert — browsers will warn, which is fine for home-lab use.)
+
+---
 
 ## 5. Log in
 
@@ -110,6 +122,8 @@ it). Add the Host records you want to protect with OIDC.
 First-run fallbacks (if DNS/TLS isn't ready yet): SSO UI at
 `http://127.0.0.1:3001`, proxy UI at `http://127.0.0.1:3000`.
 
+---
+
 ## Re-running
 
 `./setup.sh` is **idempotent** — safe to re-run after editing `./config/`, after
@@ -117,6 +131,8 @@ a `docker compose down`, or after restoring from backup. It snapshots state,
 then converges the stack to your `./config/` values (LDAP service account + admin
 passwords are reset to the config; the OAuth client is kept if `proxy-secrets.js`
 already holds its creds).
+
+---
 
 ## Direct LDAP for legacy apps
 
@@ -131,6 +147,8 @@ ldapsearch -x -H ldaps://<host>:636 \
 Use the `cn=ldapclient` service account (read-only, the bootstrap created it)
 or the admin DN. Use LDAPS (636), not plain LDAP.
 
+---
+
 ## Backups and restore
 
 `./setup.sh` auto-snapshots `./config/` + LDAP + both Redis to `./backups/<ts>/`
@@ -144,6 +162,8 @@ backup:
 docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf \
   -b "<base>" > backup-$(date +%F).ldif
 ```
+
+---
 
 ## Next steps
 
