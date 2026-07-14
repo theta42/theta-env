@@ -92,7 +92,10 @@ What happens:
    service account, your first admin, and the proxy's OAuth client, and writes
    the generated client id + secret into `./config/proxy-secrets.js`.
 4. Builds + starts **proxy**, waits for `/health`.
-5. Prints your first-admin login + the public URLs.
+5. Registers `<SSO_HOST>` and `<PROXY_HOST>` as Host records in the proxy —
+   every hostname the proxy serves, including its own UI and the SSO's,
+   needs one of these or it 404s. Idempotent.
+6. Prints your first-admin login + the public URLs.
 
 The first run builds two Docker images (a few minutes). Subsequent runs are
 fast.

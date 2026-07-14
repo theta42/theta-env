@@ -152,7 +152,12 @@ operator-owned and `setup.env` is ignored.
    - registers the proxy as an OIDC client in the SSO and **writes the generated
      client id + secret back into `./config/proxy-secrets.js`**.
 4. Builds + starts the proxy container, waits for it to be healthy.
-5. Prints your first admin login + the public URLs.
+5. Registers `<SSO_HOST>` and `<PROXY_HOST>` as Host records in the proxy
+   (directly via its Host model, inside the proxy container) — the proxy
+   routes every hostname it serves off a Host record, including its own
+   management UI and the SSO's UI, so without this step those two URLs
+   would 404. Idempotent; skips a host that already exists.
+6. Prints your first admin login + the public URLs.
 
 ### Configuration — `./config/` (no `.env` files)
 
