@@ -314,6 +314,11 @@ ensure_config
 # Snapshot ./config + LDAP (slapcat) + both Redis (BGSAVE + dump.rdb) before the
 # rebuild. No-op on the very first run (nothing running, no config to lose yet).
 backup_before_rebuild() {
+	# If a command trips `set -e` and aborts the snapshot, name the offending
+	# command instead of dying silently after "Snapshotting state to ..." (the
+	# ERR trap fires for the same failures set -e would exit on, with the same
+	# if/&&/|| exemptions, and is scoped to this function).
+	trap 'warn "  snapshot aborted by command: $BASH_COMMAND"' ERR
 	local any_running=0
 	running sso-manager && any_running=1
 	running proxy && any_running=1
@@ -370,6 +375,8 @@ backup_before_rebuild() {
 		else
 			warn "  could not read ldapBaseDn from sso-secrets.js — LDAP not snapshotted"
 		fi
+	else
+		info "  LDAP: sso-manager not running — skipped"
 	fi
 
 	# Redis — snapshot each running service. Capture LASTSAVE *before* issuing
@@ -384,7 +391,10 @@ backup_before_rebuild() {
 	# it works regardless of which compose project owns the container.
 	local svc before ok rdir rfile rpath
 	for svc in sso-manager proxy; do
-		running "$svc" || continue
+		if ! running "$svc"; then
+			info "  Redis ($svc): not running — skipped"
+			continue
+		fi
 		info "  Redis ($svc): snapshotting..."
 		before="$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || echo 0)"
 		docker exec "$svc" redis-cli BGSAVE >/dev/null 2>&1 || true
@@ -412,15 +422,23 @@ backup_before_rebuild() {
 		fi
 	done
 
-	# Retention: keep the newest BACKUP_KEEP (min 1).
-	local keep="$BACKUP_KEEP"; (( keep < 1 )) && keep=1
+	# Retention: keep the newest BACKUP_KEEP (min 1). Use `[[ ]]` (not `(( ))`)
+	# for the min-1 clamp: `(( keep < 1 ))` returns exit 1 when false, which is a
+	# classic set -e landmine — `[[ ]]` is exempt as the left operand of `&&`.
+	local keep="${BACKUP_KEEP:-5}"
+	[[ "$keep" -lt 1 ]] && keep=1
+	info "  pruning old backups (keep=$keep)..."
 	local removed=0
 	while read -r old; do
 		[[ -n "$old" ]] || continue
-		rm -rf "$BACKUP_DIR/$old"
+		# Only prune real backup dirs — skip symlinks (a stray symlink could
+		# point rm at an arbitrary tree) and non-dir entries.
+		[[ -d "$BACKUP_DIR/$old" && ! -L "$BACKUP_DIR/$old" ]] || continue
+		rm -rf "$BACKUP_DIR/$old" || true
 		removed=$((removed + 1))
 	done < <(ls -1 "$BACKUP_DIR" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
 	[[ "$removed" -gt 0 ]] && info "  pruned $removed old backup(s) (keeping $keep)."
+	info "  snapshot complete."
 }
 backup_before_rebuild
 
