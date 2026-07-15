@@ -29,6 +29,12 @@ services:
     build:
       context: ./sso-manager-node
       dockerfile: Dockerfile.openldap
+      args:
+        # A submodule's .git is a pointer file, not a real repo — the image
+        # can't resolve its own commit hash from inside the build context.
+        # setup.sh sets this from the host, where the submodule resolves
+        # correctly (git -C sso-manager-node rev-parse --short HEAD).
+        GIT_COMMIT: ${SSO_GIT_COMMIT:-}
     container_name: sso-manager
     restart: unless-stopped
     networks: [theta-net]
@@ -74,6 +80,12 @@ services:
     build:
       context: ./proxy
       dockerfile: Dockerfile
+      args:
+        # A submodule's .git is a pointer file, not a real repo — the image
+        # can't resolve its own commit hash from inside the build context.
+        # setup.sh sets this from the host, where the submodule resolves
+        # correctly (git -C proxy rev-parse --short HEAD).
+        GIT_COMMIT: ${PROXY_GIT_COMMIT:-}
     container_name: proxy
     restart: unless-stopped
     networks: [theta-net]
