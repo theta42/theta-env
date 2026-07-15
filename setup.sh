@@ -272,6 +272,10 @@ module.exports = {
 		adminGroups: ['app_sso_admin'],
 		adminUsers: ['proxyadmin2'],
 		groupRoleMap: {},
+		// Initial password for the local anti-lockout admin (proxyadmin2) —
+		// only read by the proxy the first time that account is created;
+		// changing it here later has no effect on an already-created account.
+		localAdminPass: $(js_str "$CFG_PROXY_ADMIN_PASS"),
 	},
 	stack: {
 		ssoHost: $(js_str "$CFG_SSO_HOST"),
@@ -317,6 +321,7 @@ ensure_config() {
 	CFG_JWT_SECRET="${CFG_JWT_SECRET:-}"
 	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
 	CFG_SVC_PASS="${CFG_SVC_PASS:-}"
+	CFG_PROXY_ADMIN_PASS="${CFG_PROXY_ADMIN_PASS:-}"
 
 	# ── One-time migration from .env / proxy.env (existing deployments) ──
 	# Preserve the operator's existing secrets so the running deployment keeps
@@ -379,6 +384,7 @@ ensure_config() {
 	CFG_JWT_SECRET="${CFG_JWT_SECRET:-$(rand_hex 32)}"
 	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-$(rand_hex 16)}"
 	CFG_SVC_PASS="${CFG_SVC_PASS:-$(rand_hex 16)}"
+	CFG_PROXY_ADMIN_PASS="${CFG_PROXY_ADMIN_PASS:-$(rand_hex 16)}"
 
 	mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR"
 	write_sso_secrets
@@ -529,6 +535,12 @@ backup_before_rebuild() {
 backup_before_rebuild
 
 # ── 4. Start SSO Manager, wait for health ─────────────────────────────────────
+# SSO_GIT_COMMIT: sso-manager-node is a git submodule here, so its .git is a
+# pointer file (not a real repo) -- the image can't resolve its own commit
+# hash from inside the Docker build context. Resolve it on the host (where
+# the submodule DOES resolve correctly) and pass it in as a build arg; see
+# docker-compose.yml and sso-manager-node's Dockerfile.openldap.
+export SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 
@@ -549,6 +561,8 @@ done
 read_config_kv() {
 	"${COMPOSE[@]}" exec -T sso-manager node -e '
 		const c = require("/config/sso-secrets.js");
+		let p = {};
+		try { p = require("/config/proxy-secrets.js"); } catch (_) {}
 		const o = {
 			SSO_HOST: (c.stack && c.stack.ssoHost) || "",
 			PROXY_HOST: (c.stack && c.stack.proxyHost) || "",
@@ -556,6 +570,7 @@ read_config_kv() {
 			ORG_NAME: c.name || "",
 			ADMIN_UID: (c.bootstrap && c.bootstrap.adminUid) || "",
 			ADMIN_PASS: (c.bootstrap && c.bootstrap.adminPass) || "",
+			PROXY_LOCAL_ADMIN_PASS: (p.auth && p.auth.localAdminPass) || "",
 		};
 		for (const k in o) console.log(k + "=" + (o[k] == null ? "" : o[k]));
 	' 2>/dev/null
@@ -566,6 +581,7 @@ SSO_HOST="$(cfgval SSO_HOST)"
 PROXY_HOST="$(cfgval PROXY_HOST)"
 ADMIN_UID="$(cfgval ADMIN_UID)"
 ADMIN_PASS="$(cfgval ADMIN_PASS)"
+PROXY_LOCAL_ADMIN_PASS="$(cfgval PROXY_LOCAL_ADMIN_PASS)"
 
 info "Stack config:"
 info "  SSO host:      https://${SSO_HOST}"
@@ -592,6 +608,8 @@ else
 fi
 
 # ── 6. Start the proxy, wait for health ───────────────────────────────────────
+# PROXY_GIT_COMMIT: same reasoning as SSO_GIT_COMMIT above.
+export PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"
 info "Building + starting proxy (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build proxy
 
@@ -661,6 +679,12 @@ echo
 echo "  First admin login:"
 echo "    user: ${ADMIN_UID}"
 echo "    pass: ${ADMIN_PASS}"
+echo
+echo "  Proxy local admin (anti-lockout fallback if the SSO is unreachable):"
+echo "    user: proxyadmin2"
+echo "    pass: ${PROXY_LOCAL_ADMIN_PASS}"
+echo "    (only shown when the account is first created; edit ./config/proxy-secrets.js"
+echo "    or use the proxy UI to change it afterward)"
 echo
 echo "  Secrets live in ./config/ (sso-secrets.js + proxy-secrets.js). Back them"
 echo "  up off-host — ./setup.sh snapshots to ./backups/ before each rebuild."
