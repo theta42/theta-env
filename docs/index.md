@@ -14,6 +14,14 @@ It exists for people whose needs are met by these two projects and who want to
 run them "very simply." Each project still works **standalone**; this repo just
 wires them together and automates the first-run glue.
 
+## Screenshots
+
+The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
+
+| SSO Manager Dashboard | Proxy Hosts |
+| --- | --- |
+| ![SSO Manager dashboard](images/sso-dashboard.png) | ![Proxy host list](images/proxy-hosts.png) |
+
 ---
 
 ## Quick start
@@ -21,7 +29,7 @@ wires them together and automates the first-run glue.
 ```bash
 git clone --recursive https://github.com/theta42/theta-env.git
 cd theta-env
-cp setup.env.example setup.env     # then edit setup.env: set CFG_BASE_DN to your domain
+cp setup.env.example setup.env     # then edit setup.env: set CFG_DOMAIN to your domain
 ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 ```
 

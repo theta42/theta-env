@@ -16,6 +16,16 @@ Each project still runs **standalone** (`docker compose up` in its own folder);
 this repo just composes them and automates the first-run glue so they find each
 other.
 
+**Documentation:** [https://theta42.github.io/theta-env/](https://theta42.github.io/theta-env/)
+
+## Screenshots
+
+The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
+
+| SSO Manager Dashboard | Proxy Hosts |
+| --- | --- |
+| ![SSO Manager dashboard](docs/images/sso-dashboard.png) | ![Proxy host list](docs/images/proxy-hosts.png) |
+
 **Why use this instead of running the two separately?** The two only become
 useful once the proxy is registered as an OIDC client of the SSO and pointed at
 the SSO's LDAP directory — and the SSO's domain has to match across half a dozen
