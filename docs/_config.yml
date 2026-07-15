@@ -1,7 +1,7 @@
 title: theta-env
 description: A unified, one-command SSO Manager + OIDC proxy stack for home labs and small businesses
 theme: jekyll-theme-cayman
-show_downloads: true
+show_downloads: false
 github:
   repository_url: https://github.com/theta42/theta-env
   zip_url: https://github.com/theta42/theta-env/archive/refs/heads/master.zip

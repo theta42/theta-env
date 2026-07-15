@@ -24,7 +24,7 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 
 | SSO Manager Dashboard | Proxy Hosts |
 | --- | --- |
-| ![SSO Manager dashboard](docs/images/sso-dashboard.png) | ![Proxy host list](docs/images/proxy-hosts.png) |
+| [![SSO Manager dashboard](docs/images/sso-dashboard.png)](docs/images/sso-dashboard.png) | [![Proxy host list](docs/images/proxy-hosts.png)](docs/images/proxy-hosts.png) |
 
 **Why use this instead of running the two separately?** The two only become
 useful once the proxy is registered as an OIDC client of the SSO and pointed at
