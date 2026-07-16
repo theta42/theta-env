@@ -58,6 +58,13 @@ any time to converge the stack to `./config/`. For the full config reference,
 architecture, and running each project standalone, see the
 **[GitHub repository](https://github.com/theta42/theta-env)**.
 
+## More docs
+
+- **[Quickstart](quickstart.html)** — prerequisites and a step-by-step first run.
+- **[Architecture](architecture.html)** — how the pieces fit together.
+- **[Running each project standalone](standalone.html)** — using the SSO
+  Manager or the proxy on their own, without theta-env.
+
 ## Related projects
 
 - **[SSO Manager](https://theta42.github.io/sso-manager-node/)** — the OIDC
