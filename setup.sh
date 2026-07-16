@@ -152,8 +152,25 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 		die "git not found. Install git, or set SKIP_SUBMODULE_UPDATE=1 to build the pinned submodule commits."
 	fi
 	info "Updating submodules to latest (sso-manager-node, proxy)..."
+	# Record each submodule's pinned commit before pulling so we can tell the
+	# operator exactly what moved (or didn't) -- `git submodule update` itself
+	# is quiet about this, and it's the only real "did anything change" signal
+	# available to a script that isn't watching GitHub releases.
+	declare -A SUBMODULE_BEFORE_REV=()
+	for sm in sso-manager-node proxy; do
+		[[ -d "$sm" ]] && SUBMODULE_BEFORE_REV["$sm"]="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
+	done
 	if ! git submodule update --init --remote --recursive 2>&1; then
 		warn "git submodule update failed (offline?) — continuing with the currently checked-out code."
+	else
+		for sm in sso-manager-node proxy; do
+			[[ -d "$sm" ]] || continue
+			after_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
+			before_rev="${SUBMODULE_BEFORE_REV[$sm]:-}"
+			if [[ -n "$before_rev" && -n "$after_rev" && "$before_rev" != "$after_rev" ]]; then
+				info "  ${sm}: updated ${before_rev:0:12} -> ${after_rev:0:12}"
+			fi
+		done
 	fi
 else
 	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
