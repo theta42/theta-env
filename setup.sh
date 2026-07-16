@@ -146,32 +146,47 @@ then
 	fi
 fi
 
-# ── 1. Update submodules to latest, verify build contexts ─────────────────────
+# ── 1. Update submodules to their latest release tag, verify build contexts ───
+# Submodules track release tags (vX.Y.Z), not the tip of master -- so
+# "update" means "move to the newest tag", not "move to the newest commit".
+# `git submodule update --init --recursive` (no --remote) only clones a
+# missing submodule at its currently-pinned commit; it never advances it on
+# its own, so the per-submodule tag resolution below is what actually moves
+# proxy/sso-manager-node forward.
 if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 	if ! command -v git >/dev/null 2>&1; then
 		die "git not found. Install git, or set SKIP_SUBMODULE_UPDATE=1 to build the pinned submodule commits."
 	fi
-	info "Updating submodules to latest (sso-manager-node, proxy)..."
-	# Record each submodule's pinned commit before pulling so we can tell the
-	# operator exactly what moved (or didn't) -- `git submodule update` itself
-	# is quiet about this, and it's the only real "did anything change" signal
-	# available to a script that isn't watching GitHub releases.
-	declare -A SUBMODULE_BEFORE_REV=()
-	for sm in sso-manager-node proxy; do
-		[[ -d "$sm" ]] && SUBMODULE_BEFORE_REV["$sm"]="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
-	done
-	if ! git submodule update --init --remote --recursive 2>&1; then
-		warn "git submodule update failed (offline?) — continuing with the currently checked-out code."
-	else
-		for sm in sso-manager-node proxy; do
-			[[ -d "$sm" ]] || continue
-			after_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
-			before_rev="${SUBMODULE_BEFORE_REV[$sm]:-}"
-			if [[ -n "$before_rev" && -n "$after_rev" && "$before_rev" != "$after_rev" ]]; then
-				info "  ${sm}: updated ${before_rev:0:12} -> ${after_rev:0:12}"
-			fi
-		done
+	if ! git submodule update --init --recursive 2>&1; then
+		die "git submodule update --init failed. Run manually: git submodule update --init --recursive"
 	fi
+
+	info "Updating submodules to their latest release tag (sso-manager-node, proxy)..."
+	for sm in sso-manager-node proxy; do
+		[[ -d "$sm" ]] || continue
+		before_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
+
+		if ! git -C "$sm" fetch --tags -q 2>&1; then
+			warn "  ${sm}: could not fetch tags (offline?) — staying on the current pin."
+			continue
+		fi
+
+		latest_tag="$(git -C "$sm" tag --list 'v*' --sort=-v:refname | head -n1)"
+		if [[ -z "$latest_tag" ]]; then
+			warn "  ${sm}: no vX.Y.Z release tags found — staying on the current pin."
+			continue
+		fi
+
+		if ! git -C "$sm" checkout -q "$latest_tag" 2>&1; then
+			warn "  ${sm}: could not check out ${latest_tag} — staying on the current pin."
+			continue
+		fi
+
+		after_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
+		if [[ "$before_rev" != "$after_rev" ]]; then
+			info "  ${sm}: updated to ${latest_tag} (${before_rev:0:12} -> ${after_rev:0:12})"
+		fi
+	done
 else
 	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
 fi
