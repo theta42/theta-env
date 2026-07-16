@@ -558,7 +558,7 @@ backup_before_rebuild() {
 		# Only prune real backup dirs — skip symlinks (a stray symlink could
 		# point rm at an arbitrary tree) and non-dir entries.
 		[[ -d "$BACKUP_DIR/$old" && ! -L "$BACKUP_DIR/$old" ]] || continue
-		rm -rf "$BACKUP_DIR/$old" || true
+		rm -rf "${BACKUP_DIR:?}/$old" || true
 		removed=$((removed + 1))
 	done < <(ls -1 "$BACKUP_DIR" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
 	[[ "$removed" -gt 0 ]] && info "  pruned $removed old backup(s) (keeping $keep)."
@@ -572,7 +572,8 @@ backup_before_rebuild
 # hash from inside the Docker build context. Resolve it on the host (where
 # the submodule DOES resolve correctly) and pass it in as a build arg; see
 # docker-compose.yml and sso-manager-node's Dockerfile.openldap.
-export SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
+SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
+export SSO_GIT_COMMIT
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 
@@ -629,7 +630,6 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/bootstrap.js
 
 getval() { echo "$BOOTSTRAP_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
 CLIENT_ID=$(getval CLIENT_ID)
-CLIENT_SECRET=$(getval CLIENT_SECRET)
 ALREADY_CONFIGURED=$(getval ALREADY_CONFIGURED)
 [[ -n "$CLIENT_ID" ]] || die "bootstrap did not return CLIENT_ID:\n${BOOTSTRAP_OUT}"
 
@@ -641,7 +641,8 @@ fi
 
 # ── 6. Start the proxy, wait for health ───────────────────────────────────────
 # PROXY_GIT_COMMIT: same reasoning as SSO_GIT_COMMIT above.
-export PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"
+PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"
+export PROXY_GIT_COMMIT
 info "Building + starting proxy (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build proxy
 
