@@ -471,7 +471,8 @@ theta-env/
 gitignored `./config/` (`sso-secrets.js` + `proxy-secrets.js`) and snapshots to
 the gitignored `./backups/` before each rebuild.
 
-`./setup.sh` updates both submodules to the latest of their tracked remote
-branch before building, so each run builds current upstream — no manual
-`git submodule update --remote` needed. To lock to the pinned commits (offline
-rebuild, or a deliberate pin), run `SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.
+`./setup.sh` updates both submodules to their latest `vX.Y.Z` release tag
+before building — not the tip of `master` — so each run builds the newest
+tagged release of each app, not whatever's most recently merged upstream. To
+lock to the pinned commits (offline rebuild, or a deliberate pin), run
+`SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.
