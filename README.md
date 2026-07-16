@@ -476,3 +476,9 @@ before building — not the tip of `master` — so each run builds the newest
 tagged release of each app, not whatever's most recently merged upstream. To
 lock to the pinned commits (offline rebuild, or a deliberate pin), run
 `SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each theta-env release
+(and each submodule's own `CHANGELOG.md` —
+[proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
+[sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md)
+— for what changed inside the apps themselves).

@@ -64,6 +64,8 @@ architecture, and running each project standalone, see the
 - **[Architecture](architecture.html)** — how the pieces fit together.
 - **[Running each project standalone](standalone.html)** — using the SSO
   Manager or the proxy on their own, without theta-env.
+- **[Changelog](https://github.com/theta42/theta-env/blob/master/CHANGELOG.md)**
+  — what changed in each release.
 
 ## Related projects
 
