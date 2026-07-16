@@ -1,0 +1,41 @@
+name: Lint
+
+# theta-env has no app code of its own to unit-test (it orchestrates the
+# proxy/sso-manager-node submodules) -- this checks the one thing that can
+# actually break silently: setup.sh and bootstrap.js.
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches-ignore:
+      - master
+
+jobs:
+  shellcheck:
+    name: Shellcheck setup.sh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: bash -n setup.sh
+
+      - name: Shellcheck
+        run: shellcheck -S warning setup.sh
+
+  bootstrap-syntax:
+    name: Syntax check bootstrap.js
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Syntax check
+        run: node --check bootstrap/bootstrap.js
