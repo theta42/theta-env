@@ -21,3 +21,6 @@ setup.env
 
 # Docker Compose runtime artifacts
 *.log
+
+# Jekyll build output (docs/ site) — generated, not committed.
+docs/_site

@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Quickstart
+description: Step-by-step first run for theta-env — prerequisites, setup.env, and bringing up the stack with ./setup.sh.
 ---
 
 # Quickstart Guide
