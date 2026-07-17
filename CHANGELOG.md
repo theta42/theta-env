@@ -10,6 +10,14 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-07-17
+
+### Bumped
+- proxy -> [v1.1.10](https://github.com/theta42/proxy/releases/tag/v1.1.10)
+- sso-manager-node -> [v1.1.10](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.10)
+
+Both: added a help icon (❓) in the top-right header that deep-links to the doc most relevant to the current page, and made the in-app docs viewer (`/docs`) searchable (a simple line-substring search over the local doc set, no new dependency, still works with no internet access).
+
 ## [1.1.12] - 2026-07-17
 
 ### Bumped
@@ -152,7 +160,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.12...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.13...HEAD
+[1.1.13]: https://github.com/theta42/theta-env/compare/v1.1.12...v1.1.13
 [1.1.12]: https://github.com/theta42/theta-env/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/theta42/theta-env/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/theta42/theta-env/compare/v1.1.9...v1.1.10
