@@ -10,6 +10,45 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-07-16
+
+### Bumped
+- proxy -> [v1.1.7](https://github.com/theta42/proxy/releases/tag/v1.1.7)
+- sso-manager-node -> [v1.1.6](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.6)
+
+Both: redesigned the GitHub Pages docs site to match each app's own look (dark navbar/footer, Bootstrap 5, Font Awesome) instead of the generic `jekyll-theme-cayman` theme, added a real cross-page nav, SEO (`jekyll-seo-tag` + `jekyll-sitemap`), and mobile-responsive layout. theta-env's own docs site got the same treatment in this release too (see below).
+
+### Changed
+- theta-env's own docs site redesigned the same way -- dark navbar/footer using the shared theta42 logo (this repo has no app UI of its own), cross-page nav, SEO, mobile-responsive. `docs/index.md`'s "More docs" section removed (redundant with the new nav).
+- Added `docs/_site` to `.gitignore` (missing entirely before).
+
+## [1.1.6] - 2026-07-16
+
+### Bumped
+- proxy -> [v1.1.6](https://github.com/theta42/proxy/releases/tag/v1.1.6)
+
+proxy: Hosts admin UI's Authentication tab radios (Off / Basic / SSO) had no shared `name`, so clicking one didn't uncheck the others. Added `name="auth_mode"` to restore standard exclusive radio-group behavior.
+
+## [1.1.5] - 2026-07-16
+
+### Bumped
+- proxy -> [v1.1.5](https://github.com/theta42/proxy/releases/tag/v1.1.5)
+- sso-manager-node -> [v1.1.5](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.5)
+
+Both: bumped `jq-repeat` 2.0.1 -> 2.1.0. proxy fixed real breakage from the removed `__setPut`/`__setTake` API (insert/remove row hooks in the admin UI); sso-manager-node fixed a stale-data flash in the edit-profile flow caused by `update()`'s new throttling.
+
+## [1.1.4] - 2026-07-16
+
+### Added
+- White-label support in both proxy and sso-manager-node -- `<title>`, navbar brand, and logo are now conf-driven (`conf.name`/`conf.logo`) instead of hardcoded. Closes [proxy#45](https://github.com/theta42/proxy/issues/45) and [sso-manager-node#6](https://github.com/theta42/sso-manager-node/issues/6).
+
+### Fixed
+- sso-manager-node: the bundled default LDAP ppolicy had `pwdLockout: FALSE`, silently making "deactivate user" not actually block login. Fixed, with a drift-correction path for already-deployed instances.
+
+### Bumped
+- proxy -> [v1.1.4](https://github.com/theta42/proxy/releases/tag/v1.1.4)
+- sso-manager-node -> [v1.1.4](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.4)
+
 ## [1.1.3] - 2026-07-16
 
 ### Added
@@ -48,7 +87,11 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.7...HEAD
+[1.1.7]: https://github.com/theta42/theta-env/compare/v1.1.6...v1.1.7
+[1.1.6]: https://github.com/theta42/theta-env/compare/v1.1.5...v1.1.6
+[1.1.5]: https://github.com/theta42/theta-env/compare/v1.1.4...v1.1.5
+[1.1.4]: https://github.com/theta42/theta-env/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/theta42/theta-env/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/theta42/theta-env/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/theta42/theta-env/compare/v1.1.0...v1.1.1
