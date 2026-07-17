@@ -10,6 +10,16 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-07-17
+
+### Bumped
+- sso-manager-node -> [v1.1.9](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.9)
+
+sso-manager-node:
+
+### Added
+- Every account's personal Unix group (its primary GID holder) can now have supplementary members managed from the account's profile page ("Members of `<uid>`'s group", admin-only) — e.g. to share write access to files owned by that group. Uses the standard `memberUid` attribute (RFC 2307 `posixGroup`).
+
 ## [1.1.9] - 2026-07-17
 
 ### Bumped
@@ -115,7 +125,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.9...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.10...HEAD
+[1.1.10]: https://github.com/theta42/theta-env/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/theta42/theta-env/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/theta42/theta-env/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/theta42/theta-env/compare/v1.1.6...v1.1.7
