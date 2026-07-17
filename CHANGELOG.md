@@ -10,6 +10,17 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-07-17
+
+### Bumped
+- proxy -> [v1.1.8](https://github.com/theta42/proxy/releases/tag/v1.1.8)
+
+proxy:
+
+### Fixed
+- **Couldn't attach an existing host to a parent wildcard.** The host edit form's "Parent Wildcard" option submitted correctly, but `Host.prototype.update()` had no `challengeType` handling at all (only `Host.create()` did) — selecting it and saving silently did nothing. Added the same wildcard-parent lookup to `update()`.
+- **Couldn't register a wildcard's own base domain as a host.** A wildcard cert's `altNames` already cover both the base domain and `*.base domain`, but the lookup tree stores the wildcard one level below its base domain, and a lookup for the bare base domain landed on that empty parent node and found nothing — even though the already-issued cert covers it. `buildLookUpObj()` now also stamps the parent node so this resolves correctly, without re-issuing or duplicating the cert.
+
 ## [1.1.10] - 2026-07-17
 
 ### Bumped
@@ -125,7 +136,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.10...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.11...HEAD
+[1.1.11]: https://github.com/theta42/theta-env/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/theta42/theta-env/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/theta42/theta-env/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/theta42/theta-env/compare/v1.1.7...v1.1.8
