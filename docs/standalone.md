@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Standalone
+description: Running the SSO Manager or the proxy on their own, without theta-env's orchestration.
 ---
 
 # Running each project standalone

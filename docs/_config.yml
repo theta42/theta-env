@@ -1,9 +1,41 @@
 title: theta-env
-description: A unified, one-command SSO Manager + OIDC proxy stack for home labs and small businesses
-theme: jekyll-theme-cayman
-show_downloads: false
+description: A unified, one-command SSO Manager + OIDC proxy stack for home labs and small businesses.
+url: "https://theta42.github.io"
+baseurl: "/theta-env"
+logo: /assets/img/theta42.svg
+lang: en_US
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
 github:
   repository_url: https://github.com/theta42/theta-env
   zip_url: https://github.com/theta42/theta-env/archive/refs/heads/master.zip
   tar_url: https://github.com/theta42/theta-env/archive/refs/heads/master.tar.gz
   repository_name: theta42/theta-env
+
+nav:
+  - title: Home
+    page: /
+    icon: fa-house
+  - title: Quickstart
+    page: /quickstart.html
+    icon: fa-rocket
+  - title: Architecture
+    page: /architecture.html
+    icon: fa-sitemap
+  - title: Standalone
+    page: /standalone.html
+    icon: fa-puzzle-piece
+  - title: Changelog
+    url: https://github.com/theta42/theta-env/blob/master/CHANGELOG.md
+    icon: fa-list
+
+defaults:
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: default
+      image: /assets/img/theta42.svg

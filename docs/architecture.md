@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Architecture
+description: How theta-env composes the SSO Manager and proxy submodules — the OIDC/LDAP wiring setup.sh generates from one domain.
 ---
 
 # Architecture
