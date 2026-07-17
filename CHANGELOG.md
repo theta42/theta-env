@@ -10,6 +10,22 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-07-17
+
+### Bumped
+- proxy -> [v1.1.9](https://github.com/theta42/proxy/releases/tag/v1.1.9)
+
+proxy:
+
+### Added
+- The host list now shows who created each host, and when.
+- Plain (non-wildcard) hosts can now be renamed after creation — the hostname field is no longer permanently locked. Wildcard hosts, wildcard children, and auto-created subdomain cache entries stay locked, since other records reference them by name.
+- More inline help text on the host create/edit form (Target SSL, wildcard matching behavior).
+
+### Fixed
+- The host create/edit modal's tabs could overflow awkwardly on narrow (mobile) screens — they now scroll horizontally instead.
+- Fixed a bug in the vendored `model-redis` library's record-rename path: renaming a record's primary key while another `always`-type field (e.g. `updated_on`) is defined earlier in the schema left a stray, incomplete hash behind under the old key, making that name permanently unavailable for reuse. Worked around in `Host.prototype.update()`.
+
 ## [1.1.11] - 2026-07-17
 
 ### Bumped
@@ -136,7 +152,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.11...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.12...HEAD
+[1.1.12]: https://github.com/theta42/theta-env/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/theta42/theta-env/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/theta42/theta-env/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/theta42/theta-env/compare/v1.1.8...v1.1.9
