@@ -10,6 +10,17 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-07-18
+
+### Bumped
+- proxy -> [v1.1.14](https://github.com/theta42/proxy/releases/tag/v1.1.14)
+- sso-manager-node -> [v1.1.14](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.14)
+
+Both: bumped `@simpleworkjs/conf` to 1.2.0 and `jq-repeat` to 2.2.0.
+
+### Changed
+- `./config/sso-secrets.js` and `./config/proxy-secrets.js` are now loaded via each app's `CONF_SECRETS` env var (set by the entrypoint) instead of being symlinked into `/app/conf/secrets.js` — neither container needs write access to its own `conf/` directory anymore. No change to the config file format or bind mounts; existing `./config/` directories keep working as-is.
+
 ## [1.1.15] - 2026-07-17
 
 ### Bumped
@@ -195,7 +206,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.15...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.16...HEAD
+[1.1.16]: https://github.com/theta42/theta-env/compare/v1.1.15...v1.1.16
 [1.1.15]: https://github.com/theta42/theta-env/compare/v1.1.14...v1.1.15
 [1.1.14]: https://github.com/theta42/theta-env/compare/v1.1.13...v1.1.14
 [1.1.13]: https://github.com/theta42/theta-env/compare/v1.1.12...v1.1.13

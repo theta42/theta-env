@@ -13,11 +13,12 @@
 # Config + secrets live in bind-mounted ./config/ (gitignored):
 #   ./config/sso-secrets.js   — SSO app + orchestrator config
 #   ./config/proxy-secrets.js — proxy OIDC/LDAP/auth config
-# Each app's entrypoint symlinks its file into /app/conf/secrets.js so
-# @simpleworkjs/conf reads it. No app_* env is passed (app_* env would override
-# secrets.js). The sso-manager mounts ./config read-write so the bootstrap can
-# write the generated OAuth client creds back into proxy-secrets.js; the proxy
-# mounts it read-only.
+# Each app's entrypoint points CONF_SECRETS at its file so @simpleworkjs/conf
+# (>= 1.2.0) reads it directly -- no app_* env is passed (app_* env would
+# override secrets.js), and no write access to /app/conf is needed. The
+# sso-manager mounts ./config read-write so the bootstrap can write the
+# generated OAuth client creds back into proxy-secrets.js; the proxy mounts
+# it read-only.
 #
 # Compose only interpolates the port defaults below — there is no .env file.
 # First-run wiring (LDAP service account, first admin, OAuth client) is
@@ -56,7 +57,7 @@ services:
     volumes:
       # Operator-edited SSO secrets (sso-secrets.js). Read-WRITE so the bootstrap
       # can write the generated OAuth client creds into proxy-secrets.js. The
-      # entrypoint symlinks /config/sso-secrets.js -> /app/conf/secrets.js.
+      # entrypoint points CONF_SECRETS at /config/sso-secrets.js.
       - ./config:/config
       # Persist the LDAP database across container recreation.
       - ldap-data:/var/lib/ldap
@@ -108,7 +109,7 @@ services:
     volumes:
       # Operator-edited proxy secrets (proxy-secrets.js). READ-ONLY — the proxy
       # only reads it; the sso-manager bootstrap writes the OAuth creds. The
-      # entrypoint symlinks /config/proxy-secrets.js -> /app/conf/secrets.js.
+      # entrypoint points CONF_SECRETS at /config/proxy-secrets.js.
       - ./config:/config:ro
       # Persist Redis (AOF + RDB) so Host records, permissions, DNS creds, local
       # users, AND the auto-ssl Let's Encrypt certs survive container recreation.
