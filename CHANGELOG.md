@@ -10,6 +10,14 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-07-18
+
+### Bumped
+- proxy -> [v1.1.15](https://github.com/theta42/proxy/releases/tag/v1.1.15)
+- sso-manager-node -> [v1.1.15](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.15)
+
+Both apps' bare-metal `install.sh` now installs to `/opt/theta42/<app>` and seeds `/etc/<app>/secrets.js` on first run, matching a `wget -O - .../install.sh | sudo bash` one-line install for both (previously proxy-only); re-running it prints the version it's updating from/to. sso-manager-node's installer was rewritten from a flag-driven, copy-based script into the same idempotent git-clone pattern proxy already used, and now bootstraps OpenLDAP itself on first run instead of requiring the repo to already be checked out locally. None of this affects the Docker/unified-stack deployment this repo orchestrates — bare-metal-only.
+
 ## [1.1.16] - 2026-07-18
 
 ### Bumped
@@ -206,7 +214,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.16...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.17...HEAD
+[1.1.17]: https://github.com/theta42/theta-env/compare/v1.1.16...v1.1.17
 [1.1.16]: https://github.com/theta42/theta-env/compare/v1.1.15...v1.1.16
 [1.1.15]: https://github.com/theta42/theta-env/compare/v1.1.14...v1.1.15
 [1.1.14]: https://github.com/theta42/theta-env/compare/v1.1.13...v1.1.14
