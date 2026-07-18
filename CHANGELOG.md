@@ -10,6 +10,14 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-07-17
+
+### Bumped
+- proxy -> [v1.1.11](https://github.com/theta42/proxy/releases/tag/v1.1.11)
+- sso-manager-node -> [v1.1.11](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.11)
+
+Both: moved the help (❓) link out of the global header and onto each relevant card individually, so it deep-links straight to the doc that actually covers that card instead of one generic per-page guess.
+
 ## [1.1.13] - 2026-07-17
 
 ### Bumped
@@ -160,7 +168,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.13...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.14...HEAD
+[1.1.14]: https://github.com/theta42/theta-env/compare/v1.1.13...v1.1.14
 [1.1.13]: https://github.com/theta42/theta-env/compare/v1.1.12...v1.1.13
 [1.1.12]: https://github.com/theta42/theta-env/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/theta42/theta-env/compare/v1.1.10...v1.1.11
