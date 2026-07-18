@@ -172,7 +172,8 @@ operator-owned and `setup.env` is ignored.
 ### Configuration — `./config/` (no `.env` files)
 
 All config and secrets live in a bind-mounted `./config/` directory (gitignored),
-read by each app's `@simpleworkjs/conf` from a symlinked `secrets.js`:
+read by each app's `@simpleworkjs/conf` via the `CONF_SECRETS` env var, which
+the entrypoint points at the mounted file:
 
 - **`./config/sso-secrets.js`** — SSO config: `ldap` (base, admin password,
   user/group bases), `oauth` (issuer, `jwtSecret`), `smtp`, `name`, plus
