@@ -135,10 +135,12 @@ if [[ "${SKIP_SELF_UPDATE:-0}" != "1" && "${THETA_ENV_REEXECED:-0}" != "1" ]] \
 	&& git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1
 then
 	BEFORE_REV="$(git rev-parse HEAD)"
+	BEFORE_VER="$(git describe --tags "$BEFORE_REV" 2>/dev/null || echo "${BEFORE_REV:0:12}")"
 	if git pull --ff-only -q; then
 		AFTER_REV="$(git rev-parse HEAD)"
 		if [[ "$BEFORE_REV" != "$AFTER_REV" ]]; then
-			info "Updated theta-env (${BEFORE_REV:0:12} -> ${AFTER_REV:0:12}) — restarting setup.sh with the new version..."
+			AFTER_VER="$(git describe --tags "$AFTER_REV" 2>/dev/null || echo "${AFTER_REV:0:12}")"
+			info "Updated theta-env (${BEFORE_VER} -> ${AFTER_VER}) — restarting setup.sh with the new version..."
 			THETA_ENV_REEXECED=1 exec "$0" "$@"
 		fi
 	else
@@ -165,26 +167,32 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 	for sm in sso-manager-node proxy; do
 		[[ -d "$sm" ]] || continue
 		before_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
+		# Prefer the exact tag the submodule is currently pinned to; fall back
+		# to a short commit hash if it's on an untagged commit (shouldn't
+		# normally happen -- this repo only ever pins tagged releases).
+		before_tag="$(git -C "$sm" describe --tags --exact-match "$before_rev" 2>/dev/null || echo "${before_rev:0:12}")"
 
 		if ! git -C "$sm" fetch --tags -q 2>&1; then
-			warn "  ${sm}: could not fetch tags (offline?) — staying on the current pin."
+			warn "  ${sm}: could not fetch tags (offline?) — staying on ${before_tag}."
 			continue
 		fi
 
 		latest_tag="$(git -C "$sm" tag --list 'v*' --sort=-v:refname | head -n1)"
 		if [[ -z "$latest_tag" ]]; then
-			warn "  ${sm}: no vX.Y.Z release tags found — staying on the current pin."
+			warn "  ${sm}: no vX.Y.Z release tags found — staying on ${before_tag}."
 			continue
 		fi
 
 		if ! git -C "$sm" checkout -q "$latest_tag" 2>&1; then
-			warn "  ${sm}: could not check out ${latest_tag} — staying on the current pin."
+			warn "  ${sm}: could not check out ${latest_tag} — staying on ${before_tag}."
 			continue
 		fi
 
 		after_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
 		if [[ "$before_rev" != "$after_rev" ]]; then
-			info "  ${sm}: updated to ${latest_tag} (${before_rev:0:12} -> ${after_rev:0:12})"
+			info "  ${sm}: updated ${before_tag} -> ${latest_tag}"
+		else
+			info "  ${sm}: already up to date (${latest_tag})"
 		fi
 	done
 else
