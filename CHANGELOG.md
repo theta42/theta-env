@@ -10,6 +10,31 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.19] - 2026-07-18
+
+### Bumped
+- sso-manager-node -> [v1.1.17](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.17)
+
+sso-manager-node:
+
+### Added
+- `conf.ldap.ldapsHost` and `conf.ldap.ldapsPort` config options for advertising a separate, internal-only LDAPS hostname on the `/integrations` page. Falls back to the public OAuth issuer host when unset.
+- Contextual help panel on `/integrations` → LDAP explaining why LDAPS needs a hostname, why port 636 should not be forwarded publicly, and the recommended internal-DNS / Docker-internal alternatives.
+- Tests for the `/integrations` route's LDAPS URL derivation and `ldapsHost` override.
+
+### Changed
+- `nodejs/package.json` / `package-lock.json` version bumped to `1.1.17`.
+- `routes/index.js` now derives the displayed LDAPS URL from `conf.ldap.ldapsHost`/`ldapsPort` with fallback to the OAuth issuer host.
+- `docs/configuration.md`, `docs/ldap.md`, `DEPLOYMENT.md`, and `secrets.js.example` document the new `ldapsHost`/`ldapsPort` options and recommended network layouts.
+
+### theta-env own changes
+- `setup.env.example` adds optional `CFG_LDAPS_HOST` for the internal LDAPS hostname.
+- `setup.sh` passes `CFG_LDAPS_HOST` into the generated `./config/sso-secrets.js` as `ldap.ldapsHost`.
+- `config.example/sso-secrets.js.example` documents `ldap.ldapsHost` / `ldap.ldapsPort`.
+- `.env.example` adds `LDAPS_HOST` for legacy `.env` migrations.
+- `docker-compose.yml` comments warn against forwarding 636 to the public internet.
+- `README.md` explains the `CFG_LDAPS_HOST` recommendation in the port-forwarding section.
+
 ## [1.1.18] - 2026-07-18
 
 ### Bumped

@@ -240,6 +240,8 @@ module.exports = {
 		bindPassword: $(js_str "$CFG_LDAP_ADMIN_PASS"),
 		userBase: $(js_str "ou=people,${dn}"),
 		groupBase: $(js_str "ou=groups,${dn}"),
+		ldapsHost: $(js_str "${CFG_LDAPS_HOST:-}"),
+		ldapsPort: 636,
 	},
 	smtp: {
 		host: $(js_str "${CFG_SMTP_HOST:-}"),
@@ -355,6 +357,7 @@ ensure_config() {
 	CFG_ADMIN_UID="${CFG_ADMIN_UID:-}"
 	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-}"
 	CFG_LDAP_CERT_CN="${CFG_LDAP_CERT_CN:-}"
+	CFG_LDAPS_HOST="${CFG_LDAPS_HOST:-}"
 	CFG_CLIENT_ID="${CFG_CLIENT_ID:-}"
 	CFG_CLIENT_SECRET="${CFG_CLIENT_SECRET:-}"
 	CFG_LDAP_ADMIN_PASS="${CFG_LDAP_ADMIN_PASS:-}"
@@ -383,6 +386,8 @@ ensure_config() {
 		CFG_ADMIN_PASS="${BOOTSTRAP_ADMIN_PASS:-$CFG_ADMIN_PASS}"
 		CFG_SVC_PASS="${LDAP_SERVICE_PASS:-$CFG_SVC_PASS}"
 		CFG_LDAP_CERT_CN="${LDAP_CERT_CN:-$CFG_LDAP_CERT_CN}"
+		# .env has no legacy LDAPS_HOST key; this stays as set in setup.env/env.
+		CFG_LDAPS_HOST="${CFG_LDAPS_HOST:-}"
 		CFG_SMTP_HOST="${SMTP_HOST:-${CFG_SMTP_HOST:-}}"
 		CFG_SMTP_PORT="${SMTP_PORT:-${CFG_SMTP_PORT:-}}"
 		CFG_SMTP_USER="${SMTP_USER:-${CFG_SMTP_USER:-}}"
@@ -416,6 +421,7 @@ ensure_config() {
 	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
 	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-admin@$CFG_PROXY_HOST}"
 	CFG_LDAP_CERT_CN="${CFG_LDAP_CERT_CN:-}"
+	CFG_LDAPS_HOST="${CFG_LDAPS_HOST:-}"
 	CFG_CLIENT_ID="${CFG_CLIENT_ID:-}"
 	CFG_CLIENT_SECRET="${CFG_CLIENT_SECRET:-}"
 	# Random secrets (generated fresh unless sourced/migrated above). These do
