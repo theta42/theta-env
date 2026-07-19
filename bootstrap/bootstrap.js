@@ -44,8 +44,15 @@ const fs = require('fs');
 const sso   = require('/config/sso-secrets.js');
 const proxy = require('/config/proxy-secrets.js');
 
-const BASE_DN        = (sso.stack && sso.stack.ldapBaseDn) || 'dc=example,dc=com';
-const ADMIN_PASS     = (sso.ldap && sso.ldap.bindPassword) || 'admin';
+function requireConf(value, name) {
+	if (value === undefined || value === null || value === '' || value === 'CHANGE-ME') {
+		throw new Error(`${name} is not configured in /config/sso-secrets.js`);
+	}
+	return value;
+}
+
+const BASE_DN        = requireConf((sso.stack && sso.stack.ldapBaseDn), 'stack.ldapBaseDn');
+const ADMIN_PASS     = requireConf((sso.ldap && sso.ldap.bindPassword), 'ldap.bindPassword');
 const BIND_DN        = `cn=admin,${BASE_DN}`;
 const LDAP_URL       = 'ldap://localhost:389';
 
@@ -53,9 +60,9 @@ const ADMIN_UID      = (sso.bootstrap && sso.bootstrap.adminUid) || 'admin';
 // The first admin *user's* password (cn=<uid>,ou=people,<base>). Distinct from
 // ADMIN_PASS above, which is the LDAP *root* (cn=admin,<base>) bind password —
 // two different accounts, two different secrets.
-const ADMIN_USER_PASS = (sso.bootstrap && sso.bootstrap.adminPass) || 'admin';
+const ADMIN_USER_PASS = requireConf((sso.bootstrap && sso.bootstrap.adminPass), 'bootstrap.adminPass');
 const ADMIN_EMAIL    = (sso.bootstrap && sso.bootstrap.adminEmail) || '';
-const SVC_PASS       = sso.serviceAccountPass || 'service';
+const SVC_PASS       = requireConf(sso.serviceAccountPass, 'serviceAccountPass');
 
 const SSO_HOST   = (sso.stack && sso.stack.ssoHost)   || 'sso.example.com';
 const PROXY_HOST = (sso.stack && sso.stack.proxyHost) || 'proxy.example.com';

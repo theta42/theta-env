@@ -717,13 +717,13 @@ echo "                      first-run fallback: http://127.0.0.1:${SSO_PORT:-300
 echo "  Proxy mgmt UI:      https://${PROXY_HOST}"
 echo "                      first-run fallback: http://127.0.0.1:${MGMT_PORT:-3000}"
 echo
-echo "  First admin login:"
+echo "  First admin login credentials are in ./config/sso-secrets.js:"
 echo "    user: ${ADMIN_UID}"
-echo "    pass: ${ADMIN_PASS}"
+echo "    pass: bootstrap.adminPass"
 echo
 echo "  Proxy local admin (anti-lockout fallback if the SSO is unreachable):"
 echo "    user: proxyadmin2"
-echo "    pass: ${PROXY_LOCAL_ADMIN_PASS}"
+echo "    pass: auth.localAdminPass in ./config/proxy-secrets.js"
 echo "    (only shown when the account is first created; edit ./config/proxy-secrets.js"
 echo "    or use the proxy UI to change it afterward)"
 echo
