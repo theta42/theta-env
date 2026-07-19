@@ -23,6 +23,10 @@ proxy:
 - Genericized committed config defaults in `conf/base.js` and `conf/development.js` (`example.com` / `localhost` instead of theta42 infrastructure).
 - The bootstrap `proxyadmin2` account now gets a random, one-time password when `auth.localAdminPass` is unset, instead of the well-known default.
 
+### Security
+- Sanitized rendered docs HTML with `xss` in `routes/docs.js`.
+- The Unix socket JSON-RPC socket is now created with mode `660` instead of world-writable `777`.
+
 ### Fixed
 - The global error handler no longer leaks `err.keys`, stack traces, or internal details in JSON responses.
 - `DEPLOYMENT.md` and `docs/docker.md` now correctly describe the `CONF_SECRETS` env-var mechanism.
@@ -33,6 +37,8 @@ sso-manager-node:
 - Hardened LDAP filter and DN construction against injection in `models/group_ldap.js` and `models/user_ldap.js`.
 - Replaced `Math.random()`-based token/UUID/OTP generation with `crypto.randomUUID()` / `crypto.randomInt()` in `models/token.js`, `models/oauth_code.js`, and `models/oauth_client.js`.
 - Refused startup when `oauth.jwtSecret` is missing or placeholder.
+- Sanitized rendered docs/Terms-of-Service HTML with `xss` to block malicious markdown output.
+- Removed full-object `console.log` of new-user data and reduced login error logging to `name`/`message` only.
 
 ### Changed
 - Public-release packaging: removed `"private": true` from `nodejs/package.json` and bumped version to `1.1.16`.
@@ -251,7 +257,7 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.17...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.18...HEAD
 [1.1.17]: https://github.com/theta42/theta-env/compare/v1.1.16...v1.1.17
 [1.1.16]: https://github.com/theta42/theta-env/compare/v1.1.15...v1.1.16
 [1.1.15]: https://github.com/theta42/theta-env/compare/v1.1.14...v1.1.15
