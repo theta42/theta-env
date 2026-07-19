@@ -46,6 +46,8 @@ services:
       - "${SSO_BIND:-0.0.0.0}:${SSO_PORT:-3001}:3001"
       # LDAPS for EXTERNAL direct-LDAP clients (legacy apps). The proxy itself
       # reaches LDAPS over theta-net (sso-manager:636) without this host mapping.
+      # Prefer an internal-only hostname (set CFG_LDAPS_HOST in setup.env / ldapsHost
+      # in sso-secrets.js) and do NOT forward 636 to the public internet.
       - "${LDAPS_PORT:-636}:636"
       # Plain LDAP (389) is NOT mapped — direct-LDAP clients should use LDAPS.
     environment:

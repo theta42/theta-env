@@ -120,6 +120,10 @@ Optional extra ports (only if you need them):
 - **636** (LDAPS) — only if a legacy app on another machine binds to LDAP
   directly over the network. The proxy itself reaches LDAP over the internal
   Docker network, so you do **not** need to expose 636 for the stack to work.
+  **Do not forward 636 to the public internet.** If you need LAN clients to bind
+  LDAP, set `CFG_LDAPS_HOST=ldap.internal.example.com` (or `sso-manager` for
+  same-host Docker clients) in `setup.env` and use an internal DNS record / cert
+  SAN. The default shows the public SSO hostname, which implies a public route.
 
 ### 4. Docker + Docker Compose
 
