@@ -610,8 +610,6 @@ read_config_kv() {
 			LDAP_BASE_DN: (c.stack && c.stack.ldapBaseDn) || "",
 			ORG_NAME: c.name || "",
 			ADMIN_UID: (c.bootstrap && c.bootstrap.adminUid) || "",
-			ADMIN_PASS: (c.bootstrap && c.bootstrap.adminPass) || "",
-			PROXY_LOCAL_ADMIN_PASS: (p.auth && p.auth.localAdminPass) || "",
 		};
 		for (const k in o) console.log(k + "=" + (o[k] == null ? "" : o[k]));
 	' 2>/dev/null
@@ -621,8 +619,6 @@ cfgval() { echo "$CFG_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
 SSO_HOST="$(cfgval SSO_HOST)"
 PROXY_HOST="$(cfgval PROXY_HOST)"
 ADMIN_UID="$(cfgval ADMIN_UID)"
-ADMIN_PASS="$(cfgval ADMIN_PASS)"
-PROXY_LOCAL_ADMIN_PASS="$(cfgval PROXY_LOCAL_ADMIN_PASS)"
 
 info "Stack config:"
 info "  SSO host:      https://${SSO_HOST}"
