@@ -10,6 +10,16 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.1.20] - 2026-07-20
+
+### Bumped
+- proxy -> [v1.1.17](https://github.com/theta42/proxy/releases/tag/v1.1.17)
+
+proxy:
+
+### Fixed
+- An existing single-label subdomain host (e.g. `sso.nl.wgnode.com`) could not be attached to a wildcard cert added later (e.g. `*.nl.wgnode.com`): `Host.lookUpWildcardParent()` only checked the wildcard-as-child position (the wildcard's own base domain) and missed the far more common wildcard-as-sibling case, so the edit form's "Parent Wildcard" option stayed permanently greyed out. It now checks both positions, and a regression test covers the sibling case.
+
 ## [1.1.19] - 2026-07-18
 
 ### Bumped
@@ -282,7 +292,7 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.18...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.20...HEAD
 [1.1.17]: https://github.com/theta42/theta-env/compare/v1.1.16...v1.1.17
 [1.1.16]: https://github.com/theta42/theta-env/compare/v1.1.15...v1.1.16
 [1.1.15]: https://github.com/theta42/theta-env/compare/v1.1.14...v1.1.15
