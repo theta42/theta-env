@@ -60,6 +60,8 @@ It is **both** an OIDC client of the SSO (for login) **and** a direct LDAP
 client (for user lookups). Legacy apps can still bind to LDAPS on the SSO
 directly.
 
+- **Multi-Site Support (Geo-Location Scaling):** Built-in support for N-Way Multi-Master LDAP replication, allowing you to deploy the stack across multiple physical locations for HA and low latency.
+
 ---
 
 ## Before you begin
@@ -120,6 +122,10 @@ Optional extra ports (only if you need them):
 - **636** (LDAPS) — only if a legacy app on another machine binds to LDAP
   directly over the network. The proxy itself reaches LDAP over the internal
   Docker network, so you do **not** need to expose 636 for the stack to work.
+  **Do not forward 636 to the public internet.** If you need LAN clients to bind
+  LDAP, set `CFG_LDAPS_HOST=ldap.internal.example.com` (or `sso-manager` for
+  same-host Docker clients) in `setup.env` and use an internal DNS record / cert
+  SAN. The default shows the public SSO hostname, which implies a public route.
 
 ### 4. Docker + Docker Compose
 
@@ -172,7 +178,8 @@ operator-owned and `setup.env` is ignored.
 ### Configuration — `./config/` (no `.env` files)
 
 All config and secrets live in a bind-mounted `./config/` directory (gitignored),
-read by each app's `@simpleworkjs/conf` from a symlinked `secrets.js`:
+read by each app's `@simpleworkjs/conf` via the `CONF_SECRETS` env var, which
+the entrypoint points at the mounted file:
 
 - **`./config/sso-secrets.js`** — SSO config: `ldap` (base, admin password,
   user/group bases), `oauth` (issuer, `jwtSecret`), `smtp`, `name`, plus
@@ -471,7 +478,14 @@ theta-env/
 gitignored `./config/` (`sso-secrets.js` + `proxy-secrets.js`) and snapshots to
 the gitignored `./backups/` before each rebuild.
 
-`./setup.sh` updates both submodules to the latest of their tracked remote
-branch before building, so each run builds current upstream — no manual
-`git submodule update --remote` needed. To lock to the pinned commits (offline
-rebuild, or a deliberate pin), run `SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.
+`./setup.sh` updates both submodules to their latest `vX.Y.Z` release tag
+before building — not the tip of `master` — so each run builds the newest
+tagged release of each app, not whatever's most recently merged upstream. To
+lock to the pinned commits (offline rebuild, or a deliberate pin), run
+`SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each theta-env release
+(and each submodule's own `CHANGELOG.md` —
+[proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
+[sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md)
+— for what changed inside the apps themselves).

@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Architecture
+description: How theta-env composes the SSO Manager and proxy submodules — the OIDC/LDAP wiring setup.sh generates from one domain.
 ---
 
 # Architecture
@@ -101,9 +102,9 @@ inputs from the bind-mounted `./config/sso-secrets.js` + `./config/proxy-secrets
    read-only). If `proxy-secrets.js` already holds a `clientId`+`clientSecret`
    matching an existing client, they are kept; if the client exists but the file
    has no usable secret, the secret is rotated and written back.
-6. **Build + start the proxy**, wait for `/health`. The proxy entrypoint symlinks
-   `./config/proxy-secrets.js` to `/app/conf/secrets.js`, so `@simpleworkjs/conf`
-   (≥1.1.0) reads the OAuth creds + LDAP bind creds from the file.
+6. **Build + start the proxy**, wait for `/health`. The proxy entrypoint points
+   `CONF_SECRETS` at `./config/proxy-secrets.js`, so `@simpleworkjs/conf`
+   (≥1.2.0) reads the OAuth creds + LDAP bind creds from the file.
 7. **Register `<SSO_HOST>` and `<PROXY_HOST>` as Host records in the proxy** —
    `setup.sh` runs a short script inside the proxy container that calls its
    Host model directly (`Host.create({host, ip, targetPort, ...})`), rather
@@ -122,19 +123,20 @@ inputs from the bind-mounted `./config/sso-secrets.js` + `./config/proxy-secrets
 ### How config reaches the apps (no `.env`)
 
 All config and secrets live in `./config/` (gitignored, bind-mounted). Each
-entrypoint symlinks its file to `/app/conf/secrets.js` early, before the app
-starts:
+entrypoint points the `CONF_SECRETS` env var (`@simpleworkjs/conf` >= 1.2.0)
+at its file early, before the app starts:
 
 ```
-./config/sso-secrets.js    ->  sso-manager:/app/conf/secrets.js   (./config RW)
-./config/proxy-secrets.js  ->  proxy:/app/conf/secrets.js         (./config RO)
+CONF_SECRETS=/config/sso-secrets.js    (sso-manager, ./config RW)
+CONF_SECRETS=/config/proxy-secrets.js  (proxy, ./config RO)
 ```
 
-`@simpleworkjs/conf` loads `conf/base.js → <env>.js → conf/secrets.js → app_*
-env`, where **env beats `secrets.js`**. So compose passes **no `app_*` env vars**
-(only `NODE_ENV`, `NODE_PORT`) — that makes `secrets.js` authoritative. The SSO
-entrypoint reads the few values it needs at startup (LDAP base DN, admin
-password, JWT secret, cert CN) from `secrets.js` via an in-container `node` call.
+`@simpleworkjs/conf` loads `conf/base.js → <env>.js → secrets file → app_*
+env`, where **env beats the secrets file**. So compose passes **no `app_*` env
+vars** (only `NODE_ENV`, `NODE_PORT`) — that makes the secrets file
+authoritative. The SSO entrypoint reads the few values it needs at startup
+(LDAP base DN, admin password, JWT secret, cert CN) from `sso-secrets.js` via
+an in-container `node` call.
 
 ### Why not `require` the SSO's internal models?
 

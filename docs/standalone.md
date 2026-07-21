@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Standalone
+description: Running the SSO Manager or the proxy on their own, without theta-env's orchestration.
 ---
 
 # Running each project standalone
@@ -24,18 +25,18 @@ mkdir -p config && cp secrets.js.example config/sso-secrets.js   # edit it
 docker compose up -d --build
 ```
 
-The entrypoint symlinks `config/sso-secrets.js` to `nodejs/conf/secrets.js` so
+The entrypoint points the `CONF_SECRETS` env var at `config/sso-secrets.js` so
 `@simpleworkjs/conf` reads it. Set `ldap.bindPassword`, `oauth.jwtSecret`, and
 the `stack`/`bootstrap` keys (the app ignores the ones it doesn't use). Pass
-**no `app_*` env** — env beats `secrets.js`, so `app_*` would silently override
-your file.
+**no `app_*` env** — env beats the secrets file, so `app_*` would silently
+override your file.
 
 - Web UI: `http://localhost:3001`
 - Health: `http://localhost:3001/health`
 - OIDC discovery: `http://localhost:3001/.well-known/openid-configuration`
 - LDAPS: `ldaps://<host>:636`
 
-Requires `@simpleworkjs/conf` >= 1.1.0. Full reference:
+Requires `@simpleworkjs/conf` >= 1.2.0. Full reference:
 [SSO Manager deployment docs](https://theta42.github.io/sso-manager-node/deployment.html).
 
 ### Bare metal
@@ -61,11 +62,11 @@ mkdir -p config && cp secrets.js.example config/proxy-secrets.js   # edit it
 docker compose up -d --build
 ```
 
-The entrypoint symlinks `config/proxy-secrets.js` to `nodejs/conf/secrets.js` so
-`@simpleworkjs/conf` reads it. Fill in `oidc` (your SSO's endpoints +
+The entrypoint points the `CONF_SECRETS` env var at `config/proxy-secrets.js`
+so `@simpleworkjs/conf` reads it. Fill in `oidc` (your SSO's endpoints +
 `clientId`/`clientSecret`/`redirectUri`), `ldap` (bind creds + search base), and
-`auth` (admin groups/users). Pass **no `app_*` env** — env beats `secrets.js`,
-so `app_*` would silently override your file.
+`auth` (admin groups/users). Pass **no `app_*` env** — env beats the secrets
+file, so `app_*` would silently override your file.
 
 - Proxy (public, auto-SSL): `https://<host>/`
 - Mgmt UI / API: `http://127.0.0.1:3000/`

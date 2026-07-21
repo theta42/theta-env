@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Home
+description: A unified, one-command SSO Manager + OIDC proxy stack for home labs and small businesses. Wires together a self-hosted identity provider and a reverse proxy with one setup.sh.
 ---
 
 # theta-env
@@ -43,6 +44,7 @@ snapshots state before every rebuild.
 - **LDAPS** for legacy apps that bind directly.
 - **Self-service API tokens** in both apps' UIs, for scripting/CI without a
   browser session.
+- **Multi-Site Support (Geo-Location Scaling)** — built-in support for N-Way Multi-Master LDAP replication across physical locations.
 
 ## Get it
 
