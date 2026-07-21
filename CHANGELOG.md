@@ -10,6 +10,36 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-21
+
+### Bumped
+- proxy -> [v1.2.1](https://github.com/theta42/proxy/releases/tag/v1.2.1)
+- sso-manager-node -> [v1.1.18](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.18)
+
+proxy:
+
+### Fixed
+- The bootstrap anti-lockout admin account was always created as `proxyadmin2` regardless of `conf.auth.adminUsers`, while `migrations/permission_bootstrap.js` grants the global-admin permission to `conf.auth.adminUsers[0]`. If an operator customized `adminUsers` away from the default, the bootstrapped account and the permissioned account were two different (non-matching) usernames, so the anti-lockout account ended up with no admin access. `models/user_redis.js` now derives the bootstrap username from `conf.auth.adminUsers[0]` (falling back to `proxyadmin2`), matching `permission_bootstrap.js`.
+- Corrected a `secrets.js.example` comment that claimed the bootstrap admin's password "defaults to the username itself" — it actually generates a random password printed to the container log on first boot.
+
+### Changed
+- Refreshed all README screenshots (hosts, per-host SSO auth, per-host basic auth) against the current UI, and added a new load-balancing screenshot for the multi-target feature.
+
+sso-manager-node:
+
+### Added
+- N-Way Multi-Master LDAP replication: `LDAP_SERVER_ID` + `LDAP_REPLICATION_HOSTS` configure `syncrepl` peers in the bundled OpenLDAP, and a new `/sites` page (nav: **Sites**) shows each configured peer's LDAP URL and live reachability.
+- A `location` property on users, editable from the profile and user-edit forms.
+
+### Fixed
+- `/sites` (added above) 500'd on every load: `views/sites.ejs` included nonexistent partials `header`/`footer` instead of this app's actual `top`/`bottom`. Fixed to match every other view.
+
+### Changed
+- Refreshed all README screenshots (dashboard, users, groups, OAuth apps) against the current UI, and added a new Sites & Replication screenshot.
+
+### theta-env own changes
+- Refreshed `docs/images/sso-dashboard.png` and `docs/images/proxy-hosts.png` to match the submodules' updated screenshots.
+
 ## [1.1.20] - 2026-07-20
 
 ### Bumped
