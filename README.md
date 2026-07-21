@@ -60,6 +60,8 @@ It is **both** an OIDC client of the SSO (for login) **and** a direct LDAP
 client (for user lookups). Legacy apps can still bind to LDAPS on the SSO
 directly.
 
+- **Multi-Site Support (Geo-Location Scaling):** Built-in support for N-Way Multi-Master LDAP replication, allowing you to deploy the stack across multiple physical locations for HA and low latency.
+
 ---
 
 ## Before you begin
