@@ -10,6 +10,16 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-07-21
+
+### Bumped
+- proxy -> [v1.2.2](https://github.com/theta42/proxy/releases/tag/v1.2.2)
+
+proxy:
+
+### Fixed
+- Multi-target load balancing (added in 1.2.0) crashed every request to a load-balanced host: `ops/nginx_conf/targetinfo.lua` required a nonexistent `resty.balancer.round_robin` module. The `lua-resty-balancer` rock actually installed provides `resty.roundrobin` instead, with a different constructor API. Fixed `targetinfo.lua` to use the real module — verified end-to-end that requests now round-robin across targets with no Lua errors.
+
 ## [1.3.1] - 2026-07-21
 
 ### Bumped
