@@ -45,6 +45,7 @@ snapshots state before every rebuild.
 - **Self-service API tokens** in both apps' UIs, for scripting/CI without a
   browser session.
 - **Multi-Site Support (Geo-Location Scaling)** — built-in support for N-Way Multi-Master LDAP replication across physical locations.
+- **Multi-target load balancing** — built-in proxy support for round-robin load balancing across multiple application servers.
 
 ## Get it
 
