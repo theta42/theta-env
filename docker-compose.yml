@@ -56,6 +56,8 @@ services:
       # reads that are not part of its conf tree.
       - NODE_ENV=production
       - NODE_PORT=3001
+      - LDAP_SERVER_ID=${LDAP_SERVER_ID:-}
+      - LDAP_REPLICATION_HOSTS=${LDAP_REPLICATION_HOSTS:-}
     volumes:
       # Operator-edited SSO secrets (sso-secrets.js). Read-WRITE so the bootstrap
       # can write the generated OAuth client creds into proxy-secrets.js. The
