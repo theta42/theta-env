@@ -303,14 +303,61 @@ async function dirPost(token, path, body) {
 	return res.json();
 }
 
+async function dirPut(token, path, body) {
+	const res = await fetch(`${SSO_INTERNAL}/api/directory-admin/${path}`, {
+		method: 'PUT',
+		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`PUT /api/directory-admin/${path} failed (${res.status}): ${text}`);
+	}
+	return res.json();
+}
+
+// The site the stack registers itself under. Also the default "Location
+// (Site)" that ldap-client-joined Linux hosts attach to (parent slug
+// site_<name> — see ldap-client/index.sh), so the slugs must line up.
+const SITE_NAME = (sso.stack && sso.stack.siteName) || 'local';
+
+// Host facts, collected by setup.sh ON THE HOST (inside this container
+// hostname/uname describe the container) and passed via the exec env. Same
+// fields ldap-client/index.sh registers, so stack hosts and ldap-client-
+// joined hosts carry identical metadata.
+const HOST_FACTS = {
+	name:   process.env.STACK_HOST_NAME   || '',
+	ip:     process.env.STACK_HOST_IP     || '',
+	mac:    process.env.STACK_HOST_MAC    || '',
+	os:     process.env.STACK_HOST_OS     || '',
+	kernel: process.env.STACK_HOST_KERNEL || '',
+};
+
 async function seedDirectory(token, clientId) {
 	let resources = ((await dirGet(token, 'resources')).results) || [];
 
-	// Create a resource unless its slug already exists (operator-owned then).
-	async function ensure(kind, name, slug, parentId, metadata) {
-		const found = resources.find((r) => r.slug === slug);
+	// Create a resource unless its slug (or a legacy alternate from an earlier
+	// seed layout) already exists. On an existing resource, seed metadata keys
+	// it doesn't have yet are filled in — operator-set values always win and
+	// are never overwritten.
+	async function ensure(kind, name, slug, parentId, metadata, altSlugs) {
+		const slugs = [slug, ...(altSlugs || [])];
+		const found = resources.find((r) => slugs.includes(r.slug));
 		if (found) {
-			log(`  directory: ${kind} '${slug}' exists — keeping`);
+			const have = found.metadata || {};
+			const missing = Object.entries(metadata || {})
+				.filter(([k, v]) => (have[k] === undefined || have[k] === '') && v !== '');
+			if (missing.length) {
+				const merged = { ...have };
+				for (const [k, v] of missing) merged[k] = v;
+				// metadata-only PUT: no kind/hostId in the body, so the route's
+				// parent validation and edge rewiring are not triggered.
+				await dirPut(token, `resources/${found.id}`, { metadata: merged });
+				found.metadata = merged;
+				log(`  directory: ${kind} '${found.slug}' exists — filled ${missing.map(([k]) => k).join(', ')}`);
+			} else {
+				log(`  directory: ${kind} '${found.slug}' exists — keeping`);
+			}
 			return found;
 		}
 		const body = { kind, name, slug, metadata: metadata || {} };
@@ -321,25 +368,53 @@ async function seedDirectory(token, clientId) {
 		return created;
 	}
 
-	const site  = await ensure('site', ORG, slugify(DOMAIN || ORG), null, {});
-	const host  = await ensure('host', 'Stack host', 'stack-host', site.id, {});
-	await ensure('service', 'SSO Manager', 'sso-manager', host.id, { address: `https://${SSO_HOST}` });
+	// site_<name> / host_<name> slug convention matches ldap-client/index.sh.
+	// altSlugs grandfather in the layout the first seed release used.
+	const site = await ensure('site', SITE_NAME, `site_${slugify(SITE_NAME)}`, null,
+		{ isCurrentSite: true },
+		[slugify(DOMAIN || ORG)]);
+	const hostSlug = HOST_FACTS.name ? `host_${slugify(HOST_FACTS.name)}` : 'stack-host';
+	const host = await ensure('host', HOST_FACTS.name || 'Stack host', hostSlug, site.id, {
+		subType: 'linux',
+		ip: HOST_FACTS.ip,
+		macAddress: HOST_FACTS.mac,
+		os: HOST_FACTS.os,
+		kernel: HOST_FACTS.kernel,
+	}, ['stack-host']);
+	await ensure('service', 'SSO Manager', 'sso-manager', host.id, {
+		address: `https://${SSO_HOST}`,
+		port: 3001,
+		gitRepo: 'https://github.com/theta42/sso-manager-node',
+		subType: 'web',
+	});
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
 	// in the stack actually flows through (80/443). Two faces, two entries.
-	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, { address: `https://${PROXY_HOST}` });
+	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, {
+		address: `https://${PROXY_HOST}`,
+		port: 3000,
+		gitRepo: 'https://github.com/theta42/proxy',
+		subType: 'web',
+	});
 	// OpenLDAP is independently consumed — Linux hosts authenticate against it
 	// (PAM/SSSD, sudoRole, sshPublicKey) and LDAP-native apps bind directly
 	// (see the SSO's /integrations page) — so it gets its own entry. Advertise
 	// the operator-configured LDAPS hostname when set, else the SSO host.
+	// The bundled slapd's image/config live in sso-manager-node.
 	const LDAPS_HOST = (sso.ldap && sso.ldap.ldapsHost) || SSO_HOST;
 	await ensure('service', 'OpenLDAP Directory', 'openldap', host.id, {
 		address: `ldaps://${LDAPS_HOST}:636`,
+		port: 389,
+		externalPort: 636,
+		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'openldap',
 	});
 	// Wildcard address: OpenResty fronts every host under the domain (same
-	// */** wildcard convention the proxy's Host records use).
+	// */** wildcard convention the proxy's Host records use). Its config lives
+	// in the proxy repo (ops/nginx_conf).
 	await ensure('service', 'OpenResty Edge', 'openresty', host.id, {
 		address: DOMAIN ? `https://*.${DOMAIN}` : `https://${PROXY_HOST}`,
+		port: 443,
+		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'openresty',
 	});
 
