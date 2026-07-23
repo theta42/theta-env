@@ -10,6 +10,16 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-07-23
+
+### Bumped
+- sso-manager-node -> [v1.3.2](https://github.com/theta42/sso-manager-node/releases/tag/v1.3.2)
+
+sso-manager-node 1.3.2:
+
+### Fixed
+- **OAuth client management API returned `client_id: undefined` on every GET**, which broke this stack's bootstrap: it lists the OAuth clients and rotates by the returned `client_id`, so it called `/api/oauth/client/undefined/rotate` and got a 500 — aborting `setup.sh` with `bootstrap failed` whenever `proxy-secrets.js` had no usable secret (e.g. a fresh/rotated deployment). The ORM's `toJSON()` was stripping the mapped `client_id`/`scopes`/… fields; `OAuthClient.get()` now emits them explicitly (and omits `client_secret_hash`). Unknown client ids now 404 instead of 500.
+
 ## [1.3.5] - 2026-07-23
 
 ### Added
