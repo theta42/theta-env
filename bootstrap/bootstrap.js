@@ -327,8 +327,9 @@ async function seedDirectory(token, clientId) {
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
 	// in the stack actually flows through (80/443). Two faces, two entries.
 	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, { address: `https://${PROXY_HOST}` });
-	// OpenLDAP is independently consumed (direct LDAPS binds for legacy apps —
-	// see the SSO's /integrations page), so it gets its own entry. Advertise
+	// OpenLDAP is independently consumed — Linux hosts authenticate against it
+	// (PAM/SSSD, sudoRole, sshPublicKey) and LDAP-native apps bind directly
+	// (see the SSO's /integrations page) — so it gets its own entry. Advertise
 	// the operator-configured LDAPS hostname when set, else the SSO host.
 	const LDAPS_HOST = (sso.ldap && sso.ldap.ldapsHost) || SSO_HOST;
 	await ensure('service', 'OpenLDAP Directory', 'openldap', host.id, {
