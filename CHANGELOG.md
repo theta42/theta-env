@@ -10,6 +10,8 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-07-23
+
 ### Added
 - **Optional SSH jump host** (theta42/jump-host) as a third, opt-in submodule. Enable with `CFG_JUMP_HOST_ENABLED=true` in `setup.env`: setup.sh clones/tag-tracks the submodule and builds it behind the `jump-host` compose profile, the bootstrap mints a directory API token and writes `./config/jump-secrets.js` (LDAP admin bind so it can inject users' `sshPublicKey`), the jump host is registered as a proxy Host (its web UI) and seeded as a directory service. Users then `ssh uid_-_host@jump.<domain>` (WinSCP-friendly) or `ssh uid@jump.<domain>` for a TUI host picker; the web UI on :3002 shows audit + metrics. Off by default — existing installs are unaffected.
 
