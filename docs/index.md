@@ -15,7 +15,9 @@ LDAP directory) and [Proxy](https://theta42.github.io/proxy/) (an
 OIDC-protected reverse proxy that can also look users up directly in LDAP) —
 and automates the fiddly part: registering the proxy as an OIDC client of the
 SSO and pointing it at the right LDAP directory, with hostnames and secrets
-generated from one `setup.env`.
+generated from one `setup.env`. An optional third component, the
+[Jump Host](https://theta42.github.io/jump-host/), adds directory-driven SSH
+access to your machines through one public entry point.
 
 ## Screenshots
 
@@ -41,7 +43,11 @@ snapshots state before every rebuild.
 - **SSO Manager**, fronted by the proxy under TLS — manage users, groups,
   and OAuth clients.
 - **Proxy** — add the hosts you want to protect with OIDC login.
-- **LDAPS** for legacy apps that bind directly.
+- **LDAPS** for direct binds — Linux hosts (PAM/SSSD, sudo, SSH keys) and
+  LDAP-native apps authenticate against the same directory.
+- **SSH Jump Host** *(optional)* — `ssh uid_-_host@jump.<domain>` (WinSCP-friendly)
+  or an interactive picker; access is driven by directory group membership, with
+  a web UI for audit + metrics. Enable with `CFG_JUMP_HOST_ENABLED=true`.
 - **Self-service API tokens** in both apps' UIs, for scripting/CI without a
   browser session.
 - **Multi-Site Support (Geo-Location Scaling)** — built-in support for N-Way Multi-Master LDAP replication across physical locations.
@@ -67,3 +73,5 @@ architecture, and running each project standalone, see the
   provider + LDAP directory this stack runs.
 - **[Proxy](https://theta42.github.io/proxy/)** — the reverse proxy this
   stack runs in front of it.
+- **[Jump Host](https://theta42.github.io/jump-host/)** — the optional SSH jump
+  host this stack can bring up (`CFG_JUMP_HOST_ENABLED=true`).

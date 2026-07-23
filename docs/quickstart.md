@@ -60,6 +60,9 @@ setups `CFG_DOMAIN` is the only value you set:
 | `CFG_ADMIN_UID` | `admin` | optional, defaults to `admin` |
 | `CFG_ADMIN_EMAIL` | `admin@<proxyHost>` | optional |
 | `CFG_BASE_DN` | `dc=lab,dc=local` | advanced: override the derived LDAP base DN |
+| `CFG_JUMP_HOST_ENABLED` | `true` | optional: bring up the [SSH jump host](https://theta42.github.io/jump-host/) (default off) |
+| `CFG_JUMP_HOST` | `jump.lab.local` | optional, defaults to `jump.<domain>` |
+| `JUMP_SSH_PORT` | `2222` | optional: host port for the jump host's SSH (never 22 by default) |
 
 `setup.env` is used **only on the first run** to generate `./config/`; after
 that `./config/*.js` are operator-owned and `setup.env` is ignored. Secrets
