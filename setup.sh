@@ -43,7 +43,11 @@
 #   5. docker compose exec sso-manager node /bootstrap/bootstrap.js
 #      -> creates/updates the LDAP service account, first admin, OAuth client;
 #         writes the OAuth client creds into ./config/proxy-secrets.js; prints
-#         CLIENT_ID / CLIENT_SECRET / ALREADY_CONFIGURED on stdout.
+#         CLIENT_ID / CLIENT_SECRET / ALREADY_CONFIGURED on stdout. Also seeds
+#         the SSO directory with the stack's own resources (site -> host ->
+#         SSO Manager + Proxy services, with the proxy's OAuth client linked
+#         under its service) so the Directory page is populated out of the
+#         box. Idempotent — existing slugs are operator-owned and left alone.
 #   6. docker compose up -d --build proxy; wait for /health.
 #   7. Register <SSO_HOST> and <PROXY_HOST> as Host records in the proxy (via
 #      `docker compose exec proxy node`, calling the proxy's Host model
