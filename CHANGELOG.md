@@ -10,6 +10,9 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+### Added
+- The bootstrap now seeds the SSO directory with the stack's own resources: a site (from the configured domain), a "Stack host", and the SSO Manager + Proxy services (with their public URLs in metadata), linking the proxy's auto-registered OAuth client under its service. The Directory page is populated out of the box instead of starting empty. Idempotent — resources whose slug already exists are operator-owned and never touched, and a seed failure only warns (never fails a bring-up, e.g. against an older sso-manager image without `/api/directory`).
+
 ## [1.3.3] - 2026-07-23
 
 ### Bumped

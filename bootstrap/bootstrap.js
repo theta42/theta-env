@@ -268,6 +268,79 @@ async function rotateClient(token, id) {
 	return { id, secret: data.client_secret };
 }
 
+// ── 5. Seed the SSO directory with the stack's own resources ────────────────
+// The Directory page (site → host → service hierarchy) starts empty even
+// though this stack knows exactly what it deployed. Seed it: one site (the
+// domain), one host (the box this stack runs on), and the two services
+// (SSO Manager + proxy), then link the proxy's OAuth client under its
+// service. Idempotent — existing slugs are left untouched, so operator
+// edits (renames, metadata, extra resources) survive re-runs. Failures
+// here only warn: the directory is a nicety, never worth failing a
+// bring-up over (e.g. an older sso-manager image without /api/directory).
+const DOMAIN = (sso.stack && sso.stack.ldapDomain) || '';
+const ORG    = sso.name || 'SSO Manager';
+
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+async function dirGet(token, path) {
+	const res = await fetch(`${SSO_INTERNAL}/api/directory-admin/${path}`, {
+		headers: { 'auth-token': token },
+	});
+	if (!res.ok) throw new Error(`GET /api/directory-admin/${path} failed (${res.status})`);
+	return res.json();
+}
+
+async function dirPost(token, path, body) {
+	const res = await fetch(`${SSO_INTERNAL}/api/directory-admin/${path}`, {
+		method: 'POST',
+		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`POST /api/directory-admin/${path} failed (${res.status}): ${text}`);
+	}
+	return res.json();
+}
+
+async function seedDirectory(token, clientId) {
+	let resources = ((await dirGet(token, 'resources')).results) || [];
+
+	// Create a resource unless its slug already exists (operator-owned then).
+	async function ensure(kind, name, slug, parentId, metadata) {
+		const found = resources.find((r) => r.slug === slug);
+		if (found) {
+			log(`  directory: ${kind} '${slug}' exists — keeping`);
+			return found;
+		}
+		const body = { kind, name, slug, metadata: metadata || {} };
+		if (parentId) body.hostId = parentId; // POST creates the parent edge
+		const created = (await dirPost(token, 'resources', body)).results;
+		resources.push(created);
+		log(`  directory: created ${kind} '${slug}'`);
+		return created;
+	}
+
+	const site  = await ensure('site', ORG, slugify(DOMAIN || ORG), null, {});
+	const host  = await ensure('host', 'Stack host', 'stack-host', site.id, {});
+	await ensure('service', 'SSO Manager', 'sso-manager', host.id, { address: `https://${SSO_HOST}` });
+	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, { address: `https://${PROXY_HOST}` });
+
+	// Link the proxy's OAuth client (Resource-backed since sso-manager 1.3.0)
+	// under its service, if it appears in the directory and isn't linked yet.
+	if (clientId) {
+		const oauthRes = resources.find((r) => r.id === clientId);
+		if (oauthRes) {
+			const edges = ((await dirGet(token, 'edges')).results) || [];
+			const linked = edges.some((e) => e.childId === clientId);
+			if (!linked) {
+				await dirPost(token, 'edges', { parentId: psvc.id, childId: clientId, relation: 'oauth' });
+				log(`  directory: linked OAuth client under 'proxy'`);
+			}
+		}
+	}
+}
+
 // Write the OAuth client creds back into /config/proxy-secrets.js so the proxy
 // (which reads that file) can use them. Only the clientId/clientSecret lines
 // are touched; the rest of the file (operator edits, comments) is preserved.
@@ -307,6 +380,7 @@ function writeProxyCreds(id, secret) {
 
 		const list = await listClients(token);
 		// Find the proxy's client: by id if we have usable creds, else by name.
+		let resolvedClientId = '';
 		let client = null;
 		if (HAS_USABLE_CREDS) client = list.find((c) => c.client_id === EXISTING_ID);
 		if (!client) client = list.find((c) => c.name === CLIENT_NAME);
@@ -319,6 +393,7 @@ function writeProxyCreds(id, secret) {
 			out('CLIENT_ID', EXISTING_ID);
 			out('CLIENT_SECRET', EXISTING_SECRET);
 			out('ALREADY_CONFIGURED', '1');
+			resolvedClientId = EXISTING_ID;
 		} else if (client) {
 			// Client exists but the file has no recoverable secret for it — rotate
 			// so the proxy gets a fresh secret it can actually read, then write back.
@@ -328,6 +403,7 @@ function writeProxyCreds(id, secret) {
 			out('CLIENT_ID', id);
 			out('CLIENT_SECRET', secret);
 			out('ALREADY_CONFIGURED', '0');
+			resolvedClientId = id;
 		} else {
 			// No client yet — create one and write the generated creds back.
 			const { id, secret } = await createClient(token);
@@ -335,7 +411,18 @@ function writeProxyCreds(id, secret) {
 			out('CLIENT_ID', id);
 			out('CLIENT_SECRET', secret);
 			out('ALREADY_CONFIGURED', '0');
+			resolvedClientId = id;
 		}
+
+		// Seed the directory (site/host/services + OAuth client link). Never
+		// fails the bootstrap — warn and continue.
+		try {
+			log('Seeding directory resources...');
+			await seedDirectory(token, resolvedClientId);
+		} catch (e) {
+			log(`WARNING: directory seed failed (${e.message || e}) — continuing`);
+		}
+
 		log('Done.');
 		process.exit(0);
 	} catch (e) {
