@@ -152,6 +152,19 @@ then
 	fi
 fi
 
+# ── Optional jump host: resolve the enable flag early ─────────────────────────
+# CFG_JUMP_HOST_ENABLED gates the optional SSH jump host (a third submodule).
+# Read it from the environment or ./setup.env now (before the submodule loop
+# and the compose steps) so every run knows whether to build/start it. The
+# authoritative CFG_* for secrets are still resolved in ensure_config; this is
+# only the on/off switch + its hostname.
+[[ -f ./setup.env ]] && parse_kv_file ./setup.env
+JUMP_ENABLED=0
+case "${CFG_JUMP_HOST_ENABLED:-}" in 1|true|TRUE|yes|YES) JUMP_ENABLED=1 ;; esac
+export CFG_JUMP_HOST_ENABLED CFG_JUMP_HOST
+# When enabled, activate the compose profile so `up`/`ps` include the service.
+if [[ "$JUMP_ENABLED" == "1" ]]; then export COMPOSE_PROFILES="jump-host"; fi
+
 # ── 1. Update submodules to their latest release tag, verify build contexts ───
 # Submodules track release tags (vX.Y.Z), not the tip of master -- so
 # "update" means "move to the newest tag", not "move to the newest commit".
@@ -167,8 +180,11 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 		die "git submodule update --init failed. Run manually: git submodule update --init --recursive"
 	fi
 
-	info "Updating submodules to their latest release tag (sso-manager-node, proxy)..."
-	for sm in sso-manager-node proxy; do
+	# jump-host is optional: only track/build it when enabled.
+	SUBMODULES=(sso-manager-node proxy)
+	[[ "$JUMP_ENABLED" == "1" ]] && SUBMODULES+=(jump-host)
+	info "Updating submodules to their latest release tag (${SUBMODULES[*]})..."
+	for sm in "${SUBMODULES[@]}"; do
 		[[ -d "$sm" ]] || continue
 		before_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
 		# Prefer the exact tag the submodule is currently pinned to; fall back
@@ -660,6 +676,8 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 	-e STACK_HOST_MAC="$STACK_HOST_MAC" \
 	-e STACK_HOST_OS="$STACK_HOST_OS" \
 	-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
+	-e CFG_JUMP_HOST_ENABLED="${CFG_JUMP_HOST_ENABLED:-}" \
+	-e CFG_JUMP_HOST="${CFG_JUMP_HOST:-}" \
 	sso-manager node /bootstrap/bootstrap.js) \
 	|| die "bootstrap failed:\n${BOOTSTRAP_OUT}"
 
@@ -735,6 +753,46 @@ NODEEOF
 ) || die "Registering hosts with the proxy failed:\n${HOSTS_OUT}"
 echo "$HOSTS_OUT" | sed 's/^/[setup] /'
 
+# ── 7b. Optional: build + start the SSH jump host ─────────────────────────────
+# Enabled by CFG_JUMP_HOST_ENABLED. The bootstrap (step 5) already wrote
+# ./config/jump-secrets.js (minted API token + LDAP admin bind). Build/start the
+# service (compose profile 'jump-host' is active), wait for its web /health, and
+# register its web UI hostname as a proxy Host so https://<JUMP_HOST> routes.
+if [[ "$JUMP_ENABLED" == "1" ]]; then
+	JUMP_HOST="${CFG_JUMP_HOST:-jump.${SSO_HOST#sso.}}"
+	JUMP_GIT_COMMIT="$(git -C jump-host rev-parse --short HEAD 2>/dev/null || echo unknown)"
+	export JUMP_GIT_COMMIT
+	info "Building + starting jump-host (optional; enabled via CFG_JUMP_HOST_ENABLED)..."
+	"${COMPOSE[@]}" up -d --build jump-host
+
+	info "Waiting for jump-host to be healthy..."
+	for i in $(seq 1 60); do
+		if docker exec jump-host node -e "require('http').get('http://localhost:3002/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" >/dev/null 2>&1; then
+			info "jump-host is healthy."; break
+		fi
+		if (( i == 60 )); then warn "jump-host did not become healthy in 120s. Check: ${COMPOSE[*]} logs jump-host"; break; fi
+		sleep 2
+	done
+
+	info "Registering ${JUMP_HOST} (jump-host web UI) with the proxy..."
+	JUMP_HOSTS_OUT=$("${COMPOSE[@]}" exec -T proxy node <<NODEEOF || true
+const {Host} = require('/app/models').models;
+(async () => {
+	try {
+		try { await Host.get($(js_str "$JUMP_HOST")); console.log('SKIP ${JUMP_HOST} (already exists)'); }
+		catch (e) {
+			if (e.name !== 'EntryNotFound') throw e;
+			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'jump-host', targetPort: 3002, forcessl: true, targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
+			console.log('CREATED ${JUMP_HOST} -> jump-host:3002');
+		}
+		process.exit(0);
+	} catch (error) { console.error('ERROR', error.message); process.exit(1); }
+})();
+NODEEOF
+)
+	echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
+fi
+
 # ── 8. Summary ───────────────────────────────────────────────────────────────
 echo
 info "\033[1;32mDone. Your SSO + proxy stack is up.\033[0m"
@@ -743,6 +801,11 @@ echo "  SSO Manager UI:    https://${SSO_HOST}   (fronted by the proxy under TLS
 echo "                      first-run fallback: http://127.0.0.1:${SSO_PORT:-3001}"
 echo "  Proxy mgmt UI:      https://${PROXY_HOST}"
 echo "                      first-run fallback: http://127.0.0.1:${MGMT_PORT:-3000}"
+if [[ "$JUMP_ENABLED" == "1" ]]; then
+echo "  Jump host (SSH):    ssh -p ${JUMP_SSH_PORT:-2222} <uid>@${JUMP_HOST:-jump.${SSO_HOST#sso.}}   (TUI picker)"
+echo "                      ssh -p ${JUMP_SSH_PORT:-2222} <uid>_-_<host>@${JUMP_HOST:-jump.${SSO_HOST#sso.}}"
+echo "  Jump host (web):    https://${JUMP_HOST:-jump.${SSO_HOST#sso.}}   (audit + metrics)"
+fi
 echo
 echo "  First admin login credentials are in ./config/sso-secrets.js:"
 echo "    user: ${ADMIN_UID}"

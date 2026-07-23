@@ -4,3 +4,7 @@
 [submodule "proxy"]
 	path = proxy
 	url = https://github.com/theta42/proxy.git
+[submodule "jump-host"]
+	path = jump-host
+	url = https://github.com/theta42/jump-host.git
+	branch = master

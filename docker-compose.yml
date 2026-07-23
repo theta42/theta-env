@@ -131,6 +131,32 @@ services:
       retries: 3
       start_period: 30s
 
+  # Optional SSH jump host. Only started when the `jump-host` compose profile
+  # is active — setup.sh exports COMPOSE_PROFILES=jump-host when
+  # CFG_JUMP_HOST_ENABLED=true. Authenticates users against the SSO's OpenLDAP,
+  # resolves reachable hosts from the directory API, and bridges SSH through.
+  jump-host:
+    profiles: ["jump-host"]
+    build:
+      context: ./jump-host
+      dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${JUMP_GIT_COMMIT:-}
+    container_name: jump-host
+    restart: unless-stopped
+    networks: [theta-net]
+    depends_on:
+      sso-manager:
+        condition: service_healthy
+    ports:
+      - "${JUMP_SSH_PORT:-2222}:2222"   # SSH front door
+      - "${JUMP_WEB_BIND:-0.0.0.0}:${JUMP_WEB_PORT:-3002}:3002"  # web UI/API
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./config:/config:ro         # jump-secrets.js (written by ensure_config/bootstrap)
+      - jump-data:/var/lib/jump-host  # generated host keys persist here
+
 networks:
   theta-net:
     driver: bridge
@@ -142,3 +168,4 @@ volumes:
   proxy-data:
   proxy-cache:
   proxy-logs:
+  jump-data:
