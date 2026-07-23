@@ -31,7 +31,7 @@ fetches all three in one step; `git submodule update --remote` bumps them.
 
 ```
             ┌──────────────────────────────────────────────┐
-            │  your browser / apps / legacy LDAP clients     │
+            │  your browser / apps / direct LDAP clients     │
             └───────────────┬──────────────────────────────┘
                             │ https (:443)        ldaps (:636)
                   ┌─────────▼─────────┐
