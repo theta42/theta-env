@@ -10,6 +10,21 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-07-23
+
+### Bumped
+- sso-manager-node -> [v1.3.1](https://github.com/theta42/sso-manager-node/releases/tag/v1.3.1)
+
+sso-manager-node 1.3.1:
+
+### Added
+- The Directory documentation (`docs/directory.md`) is now surfaced: registered in-app at `/docs/directory` ("Directory & Inventory"), help-linked from the Directory page header, and linked from the docs-site index. Extended with the shared slug conventions (`site_<name>`, `host_<hostname>` — as used by ldap-client and the theta-env seed), the automatic-registration story (theta-env stack seeding, ldap-client Linux host enrollment), and the API surface (admin at `/api/directory-admin`, read-only graph at `/api/discovery`).
+
+### Changed
+- Direct LDAP binds are described as first-class, not "legacy", across README, DEPLOYMENT.md, docs, and the Dockerfile: Linux hosts are a primary consumer of the directory (PAM/SSSD login, LDAP-backed `sudo` via `sudoRole`, SSH public keys via openssh-lpk) — exactly what the custom schemas exist for.
+
+### theta-env own changes
+
 ### Added
 - `CFG_SITE_NAME` in `setup.env` (right below `CFG_DOMAIN`, default `local`): names the SSO directory site the stack registers itself under — slug `site_<name>`, matching the `parentSlug` convention ldap-client-joined Linux hosts use, so they land under the same site.
 - The directory seed now collects real host facts on the machine (hostname, IP, MAC of the default-route interface, OS pretty-name, kernel — same collection as `ldap-client/index.sh`) and registers the stack host as `host_<hostname>` with that metadata, plus fills in each service's internal port and git repo (`sso-manager` 3001, `proxy` 3000, `openldap` 389/636, `openresty` 443). Existing resources from the earlier seed layout (`stack-host`, domain-slug site) are adopted in place — seed metadata only fills fields the operator hasn't set, never overwrites.
