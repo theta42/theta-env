@@ -324,7 +324,23 @@ async function seedDirectory(token, clientId) {
 	const site  = await ensure('site', ORG, slugify(DOMAIN || ORG), null, {});
 	const host  = await ensure('host', 'Stack host', 'stack-host', site.id, {});
 	await ensure('service', 'SSO Manager', 'sso-manager', host.id, { address: `https://${SSO_HOST}` });
+	// Proxy = the node management UI; OpenResty = the data plane every hostname
+	// in the stack actually flows through (80/443). Two faces, two entries.
 	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, { address: `https://${PROXY_HOST}` });
+	// OpenLDAP is independently consumed (direct LDAPS binds for legacy apps —
+	// see the SSO's /integrations page), so it gets its own entry. Advertise
+	// the operator-configured LDAPS hostname when set, else the SSO host.
+	const LDAPS_HOST = (sso.ldap && sso.ldap.ldapsHost) || SSO_HOST;
+	await ensure('service', 'OpenLDAP Directory', 'openldap', host.id, {
+		address: `ldaps://${LDAPS_HOST}:636`,
+		subType: 'openldap',
+	});
+	// Wildcard address: OpenResty fronts every host under the domain (same
+	// */** wildcard convention the proxy's Host records use).
+	await ensure('service', 'OpenResty Edge', 'openresty', host.id, {
+		address: DOMAIN ? `https://*.${DOMAIN}` : `https://${PROXY_HOST}`,
+		subType: 'openresty',
+	});
 
 	// Link the proxy's OAuth client (Resource-backed since sso-manager 1.3.0)
 	// under its service, if it appears in the directory and isn't linked yet.
