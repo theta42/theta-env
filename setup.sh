@@ -265,6 +265,7 @@ module.exports = {
 	stack: {
 		ldapBaseDn: $(js_str "$dn"),
 		ldapDomain: $(js_str "$domain"),
+		siteName: $(js_str "${CFG_SITE_NAME:-local}"),
 		ldapCertCn: $(js_str "${CFG_LDAP_CERT_CN:-}"),
 		ssoHost: $(js_str "$CFG_SSO_HOST"),
 		proxyHost: $(js_str "$CFG_PROXY_HOST"),
@@ -355,6 +356,7 @@ ensure_config() {
 	# derivation block further down (no example.com placeholders here).
 	CFG_BASE_DN="${CFG_BASE_DN:-}"
 	CFG_DOMAIN="${CFG_DOMAIN:-}"
+	CFG_SITE_NAME="${CFG_SITE_NAME:-}"
 	CFG_ORG="${CFG_ORG:-}"
 	CFG_SSO_HOST="${CFG_SSO_HOST:-}"
 	CFG_PROXY_HOST="${CFG_PROXY_HOST:-}"
@@ -421,6 +423,7 @@ ensure_config() {
 	CFG_BASE_DN="${CFG_BASE_DN:-$(dn_from_domain "$CFG_DOMAIN")}"
 	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.$CFG_DOMAIN}"
 	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.$CFG_DOMAIN}"
+	CFG_SITE_NAME="${CFG_SITE_NAME:-local}"
 	CFG_ORG="${CFG_ORG:-SSO Manager}"
 	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
 	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-admin@$CFG_PROXY_HOST}"
@@ -639,7 +642,25 @@ info "  Admin uid:     ${ADMIN_UID}"
 # The bootstrap reads its inputs from /config/*.js (not env) and writes the
 # generated OAuth client creds back into /config/proxy-secrets.js. No -e flags.
 info "Running bootstrap (creates/updates the LDAP service account, first admin, OAuth client)..."
-BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/bootstrap.js) \
+# Host facts for the directory seed — collected HERE (on the host; inside the
+# container hostname/uname describe the container, not the machine). Same
+# collection as ldap-client/index.sh so stack hosts and ldap-client-joined
+# hosts carry identical metadata. All best-effort: a missing tool just leaves
+# the field blank.
+STACK_HOST_NAME="$(hostname 2>/dev/null || true)"
+STACK_HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+_iface="$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}' || true)"
+STACK_HOST_MAC=""
+[[ -n "$_iface" ]] && STACK_HOST_MAC="$(cat "/sys/class/net/$_iface/address" 2>/dev/null || true)"
+STACK_HOST_OS="$( (. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}") || true)"
+STACK_HOST_KERNEL="$(uname -r 2>/dev/null || true)"
+BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
+	-e STACK_HOST_NAME="$STACK_HOST_NAME" \
+	-e STACK_HOST_IP="$STACK_HOST_IP" \
+	-e STACK_HOST_MAC="$STACK_HOST_MAC" \
+	-e STACK_HOST_OS="$STACK_HOST_OS" \
+	-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
+	sso-manager node /bootstrap/bootstrap.js) \
 	|| die "bootstrap failed:\n${BOOTSTRAP_OUT}"
 
 getval() { echo "$BOOTSTRAP_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
