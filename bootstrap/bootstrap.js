@@ -229,14 +229,15 @@ async function listClients(token) {
 	return (data && data.results) || [];
 }
 
-async function createClient(token) {
+async function createClient(token, opts) {
+	const o = opts || { name: CLIENT_NAME, description: 'theta-env proxy (auto-registered)', redirect_uris: [REDIRECT_URI] };
 	const res = await fetch(`${SSO_INTERNAL}/api/oauth/client`, {
 		method: 'POST',
 		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			name: CLIENT_NAME,
-			description: 'theta-env proxy (auto-registered)',
-			redirect_uris: [REDIRECT_URI],
+			name: o.name,
+			description: o.description,
+			redirect_uris: o.redirect_uris,
 			scopes: ['openid', 'profile', 'email', 'groups'],
 			allowed_groups: [],
 		}),
@@ -249,7 +250,7 @@ async function createClient(token) {
 	const id = (data.results && data.results.client_id) || data.client_id;
 	const secret = data.client_secret;
 	if (!id || !secret) throw new Error(`create OAuth client returned no id/secret: ${JSON.stringify(data)}`);
-	log(`Created OAuth client ${CLIENT_NAME} (${id})`);
+	log(`Created OAuth client ${o.name} (${id})`);
 	return { id, secret };
 }
 
@@ -487,6 +488,8 @@ const JUMP_ENABLED = /^(1|true|yes)$/i.test(process.env.CFG_JUMP_HOST_ENABLED ||
 const JUMP_HOST = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
 const JUMP_SECRETS = '/config/jump-secrets.js';
 const JUMP_TOKEN_NAME = 'theta-jump-host';
+const JUMP_CLIENT_NAME = 'theta-jump';
+const JUMP_REDIRECT_URI = `https://${JUMP_HOST}/api/auth/oidc/callback`;
 
 async function mintApiToken(token, name) {
 	const res = await fetch(`${SSO_INTERNAL}/api/api-token`, {
@@ -501,14 +504,19 @@ async function mintApiToken(token, name) {
 	return raw;
 }
 
-function jumpFileHasToken() {
+// The generated file is "complete" only if it has BOTH a real directory API
+// token AND an OIDC client id — an existing file from the pre-OIDC layout (a
+// token but no oidc block) is regenerated so the web UI's SSO login works.
+function jumpFileComplete() {
 	try {
 		const src = fs.readFileSync(JUMP_SECRETS, 'utf8');
-		return /apiToken:\s*['"]sso_[0-9a-f]{24}_[0-9a-f]{48}['"]/.test(src);
+		const hasToken = /apiToken:\s*['"]sso_[0-9a-f]{24}_[0-9a-f]{48}['"]/.test(src);
+		const hasOidc = /clientId:\s*['"][0-9a-f-]{8,}['"]/.test(src);
+		return hasToken && hasOidc;
 	} catch (_) { return false; }
 }
 
-function writeJumpSecrets(apiToken) {
+function writeJumpSecrets(apiToken, oidc, localAdminPass) {
 	const siteName = (sso.stack && sso.stack.siteName) || 'local';
 	const ldapsHost = (sso.ldap && sso.ldap.ldapsHost) || SSO_HOST;
 	const body = `'use strict';
@@ -537,7 +545,27 @@ module.exports = {
 \t\tkeyComment: ${JSON.stringify(`jump-host@${siteName}`)},
 \t},
 \tweb: { port: 3002 },
-\tauth: { adminGroups: ['app_sso_admin'] },
+\t// Web UI SSO login — the jump host's own OAuth client. tokenEndpoint /
+\t// userinfoEndpoint use the internal docker-net address (server-to-server);
+\t// authorizationEndpoint is the public SSO host (browser-facing).
+\toidc: {
+\t\tenabled: true,
+\t\tissuer: ${JSON.stringify(`https://${SSO_HOST}`)},
+\t\tauthorizationEndpoint: ${JSON.stringify(`https://${SSO_HOST}/oauth/authorize`)},
+\t\ttokenEndpoint: 'http://sso-manager:3001/oauth/token',
+\t\tuserinfoEndpoint: 'http://sso-manager:3001/oauth/userinfo',
+\t\tclientId: ${JSON.stringify(oidc.id)},
+\t\tclientSecret: ${JSON.stringify(oidc.secret)},
+\t\tredirectUri: ${JSON.stringify(JUMP_REDIRECT_URI)},
+\t\tscopes: ['openid', 'profile', 'email', 'groups'],
+\t\tgroupsClaim: 'groups',
+\t\tusernameClaim: 'preferred_username',
+\t},
+\tauth: {
+\t\tadminGroups: ['app_sso_admin'],
+\t\tadminUsers: ['jumpadmin'],
+\t\tlocalAdminPass: ${JSON.stringify(localAdminPass)},
+\t},
 \tredis: { prefix: 'jump_host_', redisConf: { url: 'redis://127.0.0.1:6379' } },
 \tstack: { ssoHost: ${JSON.stringify(SSO_HOST)}, jumpHost: ${JSON.stringify(JUMP_HOST)}, ldapsHost: ${JSON.stringify(ldapsHost)} },
 };
@@ -546,13 +574,30 @@ module.exports = {
 }
 
 async function provisionJumpHost(token) {
-	if (jumpFileHasToken()) {
-		log('Jump host: /config/jump-secrets.js already has an API token — keeping.');
+	if (jumpFileComplete()) {
+		log('Jump host: /config/jump-secrets.js already has API token + OIDC client — keeping.');
 		return;
 	}
 	const apiToken = await mintApiToken(token, JUMP_TOKEN_NAME);
-	writeJumpSecrets(apiToken);
-	log('Jump host: wrote /config/jump-secrets.js (minted directory API token).');
+
+	// Mint (or reuse) the jump host's own OAuth client for web-UI SSO login.
+	const clients = await listClients(token);
+	let oidc = clients.find((c) => c.name === JUMP_CLIENT_NAME);
+	if (oidc && oidc.client_id) {
+		oidc = await rotateClient(token, oidc.client_id);
+		oidc = { id: oidc.id, secret: oidc.secret };
+	} else {
+		oidc = await createClient(token, {
+			name: JUMP_CLIENT_NAME,
+			description: 'theta-env jump host web UI (auto-registered)',
+			redirect_uris: [JUMP_REDIRECT_URI],
+		});
+	}
+
+	const localAdminPass = crypto.randomBytes(16).toString('hex');
+	writeJumpSecrets(apiToken, oidc, localAdminPass);
+	log(`Jump host: wrote /config/jump-secrets.js (API token + OAuth client ${oidc.id}).`);
+	log(`Jump host: local admin 'jumpadmin' password: ${localAdminPass}`);
 }
 
 (async function main() {
