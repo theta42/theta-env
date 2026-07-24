@@ -10,6 +10,9 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+### Added
+- The bootstrap now provisions the jump host's **web-UI SSO login** when the jump host is enabled: it mints a dedicated `theta-jump` OAuth client and writes a full `oidc` block (endpoints, client id/secret, callback) plus a generated local anti-lockout admin password into `./config/jump-secrets.js`. Matches how the proxy's OIDC client is provisioned. An existing pre-OIDC `jump-secrets.js` (API token but no OIDC client) is regenerated so upgraders get SSO login. Requires jump-host ≥ v1.1.0.
+
 ## [1.3.6] - 2026-07-23
 
 ### Bumped
