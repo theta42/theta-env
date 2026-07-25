@@ -10,6 +10,74 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-25
+
+### Bumped
+- sso-manager-node -> [v1.4.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.4.0)
+- proxy -> [v1.3.0](https://github.com/theta42/proxy/releases/tag/v1.3.0)
+- jump-host -> [v1.2.0](https://github.com/theta42/jump-host/releases/tag/v1.2.0)
+
+This release unifies the three theta42 apps onto shared `@simpleworkjs/*` packages
+(`oidc-client`, `directory-schema`, `ldap`, `app-stack` — published under the
+simpleworkjs org at 1.0.0), replacing each app's byte-identical forks of the same
+code so they share one codebase and API schema. It also fixes a security
+regression in the SSO directory discovery API (OAuth `client_secret_hash` leaked
+to every authenticated caller) and the envelope drift that broke jump-host
+bridging. The shared UI chrome (`top.ejs`/`bottom.ejs`, `app-base.js`, `val.js`)
+is intentionally **not** unified in this release — that work is deferred to a
+browser-verified session; see `UI_UNIFICATION_HANDOFF.md`. No `setup.sh` change:
+the new `@simpleworkjs/*` deps resolve from npm inside each app's image build
+(`npm ci` stays clean; no `file:`/`link:`).
+
+sso-manager-node 1.4.0:
+
+### Security
+- **The directory discovery API leaked OAuth `client_secret_hash` (and any secret-ish metadata key) to every authenticated caller.** `Resource` doesn't override `toJSON`, so the ORM serialized `metadata` wholesale — including the `client_secret_hash` stored on `kind:'oauth'` resources — across `GET /api/discovery/resources`, `/graph`, `/me`, `/resources/:slug`, and the directory-admin `GET /api/directory-admin/resources`. Every discovery read endpoint and the admin list now route through `projectResource`/`projectResources` from `@simpleworkjs/directory-schema`, which unconditionally strips secret keys (anything matching `/secret|password|privatekey/i`, including `client_secret_hash`) and, for non-directory-admins, reduces metadata to a public allowlist. Admins never receive `client_secret_hash` either.
+
+### Fixed
+- **Directory discovery envelope drift.** `routes/discovery.js` (the `autoRouter(Resource)` mounted live at `app.js:87`) returned **bare arrays**, not the `{ results: [...] }` envelope the directory contract specifies — so jump-host's `data.results || []` collapsed every per-group query to `[]` and no user could bridge. Discovery is now served by explicit `/resources`, `/resources/:slug`, `/graph`, `/me` handlers that all return the `{ results }` envelope. The dead `routes/api_discovery.js` (mounted at `app.js:112`, *after* the 404 catcher) and its mount were removed.
+- `GET /api/discovery/resources?group=<cn>` now returns 200 with `{ results: [...] }` instead of 404.
+
+### Added
+- `@simpleworkjs/directory-schema` — the directory contract: the `kind` enum, `Resource`/`ResourceEdge`/`ResourceGroup` field defs, the `{ results }` envelope, the security projection (`projectResource`/`projectResources`/`isDirectoryAdmin`), and the discovery client. `models/resource.js` imports the field defs; the discovery + directory-admin routes use the projection.
+- `@simpleworkjs/ldap` — `models/user_ldap.js` and `models/group_ldap.js` now take `escapeFilter`/`escapeDN` and `makeClient`/`withClient` from the shared package (via local wrappers that pass `conf`); sso keeps its rich `User.get`/`Group.get`/`User.login`/`User.addSSHkey` (posix/write-side stays app-local). sso's `makeClient` passes no `tlsOptions`, so cert validation is unchanged.
+- `@simpleworkjs/app-stack` — unified `build_info` (`{buildVersion, buildHash, buildYear}`) and the `static-modules` mounting helper. `utils/build_info.js` and the static-modules loop in `routes/index.js` use the shared helpers.
+- New `tests/discovery.test.js` (jest + supertest, runs under the docker harness): locks in the `{ results }` envelope on `/resources`, `/graph`, `/me`, `/resources/:slug`, the `?group=` 200-regression, and the no-`client_secret_hash`/no-secret-key guarantee for every caller.
+
+### Changed
+- Dependency alignment: `ldapts` `^8.1.2` → `^8.1.8`. The new `@simpleworkjs/*` deps resolve from the npm registry (`^1.0.0`); no `file:`/`link:` entries in the lockfile, so `npm ci` is clean in docker builds.
+- `build_info` export shape changed from `{commit, version}` to `{buildVersion, buildHash, buildYear}` (the shared shape used by all three apps).
+
+proxy 1.3.0:
+
+### Added
+- `@simpleworkjs/oidc-client` — the OIDC client (session models, auth router, OIDC utils, safe-redirect, local-admin bootstrap). Deleted the local `utils/oidc.js`, `utils/safe_redirect.js`, `models/oidc_state.js`, `models/token.js`, `models/auth.js`, `routes/auth.js`; `models/index.js` wires the factory. The per-host SSO in `routes/host_auth.js` is unchanged but consumes the shared OIDC utils.
+- `@simpleworkjs/ldap` — the ldapts client + RFC 4515/4514 escaping.
+- `@simpleworkjs/app-stack` — unified `build_info` (`{buildVersion, buildHash, buildYear}`) and the `static-modules` mounting helper. `utils/build_info.js` and the static-modules loop in `routes/render.js` now use the shared helpers.
+
+### Security
+- **LDAP filter injection in `User.get`.** The user lookup built its search filter by interpolating `data.username` raw into `(&(objectClass=inetOrgPerson)(uid=<username>))`. A username containing `*`, `(`, `)`, `\`, or NUL could widen or alter the filter (e.g. `*` → match-all). The filter value is now passed through `escapeFilter` from `@simpleworkjs/ldap` (RFC 4515 escaping).
+
+### Changed
+- Dependency alignment: `model-redis` `^1.5` → `^1.6.0`, `ldapts` `^8.1.2` → `^8.1.8`. The four new `@simpleworkjs/*` deps resolve from the npm registry (`^1.0.0`); no `file:`/`link:` entries in the lockfile, so `npm ci` is clean in docker builds.
+- `build_info` export shape changed from `{commit, version}` to `{buildVersion, buildHash, buildYear}` (the shared shape used by all three apps). The `/health` endpoint and footer now report `buildVersion`/`buildHash`.
+
+jump-host 1.2.0:
+
+### Added
+- `@simpleworkjs/oidc-client` — the OIDC client (session models, auth router, OIDC utils, safe-redirect, local-admin bootstrap). Deleted the local `utils/oidc.js`, `utils/safe_redirect.js`, `models/oidc_state.js`, `models/token.js`, `models/auth.js`, `routes/auth.js`; `models/index.js` wires the factory and the local-admin bootstrap.
+- `@simpleworkjs/directory-schema` — the sso↔jump-host directory contract. `utils/access.js` now fetches reachable hosts through the shared `createDirectoryClient` (`getResourcesByGroup`).
+- `@simpleworkjs/ldap` — `models/user_ldap.js` is now a thin wrapper over `createLdapClient`, preserving this app's loose TLS default (`rejectUnauthorized: false`) and the exact export shape.
+- `@simpleworkjs/app-stack` — unified `build_info` (`{buildVersion, buildHash, buildYear}`) and the `static-modules` mounting helper. `build_info` moved from `models/` to `utils/`; `routes/render.js` uses `mountStaticModules`.
+
+### Fixed
+- **Directory envelope drift was silently treated as "no reachable hosts".** `utils/access.js` previously read `data.results || []`, so if the SSO directory ever returned a bare array (envelope drift) every per-group query collapsed to `[]` and no user could bridge. The shared client now validates the `{ results }` envelope on every call and treats an envelope violation as a failed group fetch rather than silently returning `[]`.
+
+### Changed
+- Dependency alignment: `ldapts` `^8.1.2` → `^8.1.8`, `redis` `^4.7` → `^6.1.0` (the direct `redis` dep is unused — only `model-redis` is used, which already brings `redis` ^6.1.0). The new `@simpleworkjs/*` deps resolve from the npm registry (`^1.0.0`); no `file:`/`link:` entries in the lockfile, so `npm ci` is clean in docker builds.
+- `build_info` export shape changed from `{commit, version}` to `{buildVersion, buildHash, buildYear}` (the shared shape used by all three apps). The `/health` endpoint and footer now report `buildVersion`/`buildHash`.
+- `app-base.js` `forceLogin`/`logInRedirect` switched to the `?redirect=` query-param convention (matching the server-side `/login?redirect=` route).
+
 ## [1.3.7] - 2026-07-23
 
 ### Added
@@ -404,7 +472,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.1.20...HEAD
+[Unreleased]: https://github.com/theta42/theta-env/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/theta42/theta-env/compare/v1.3.7...v1.4.0
 [1.1.17]: https://github.com/theta42/theta-env/compare/v1.1.16...v1.1.17
 [1.1.16]: https://github.com/theta42/theta-env/compare/v1.1.15...v1.1.16
 [1.1.15]: https://github.com/theta42/theta-env/compare/v1.1.14...v1.1.15
