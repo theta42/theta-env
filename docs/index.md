@@ -25,6 +25,7 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 
 <a href="images/sso-dashboard.png" target="_blank"><img src="images/sso-dashboard.png" alt="SSO Manager dashboard" width="49%"></a>
 <a href="images/proxy-hosts.png" target="_blank"><img src="images/proxy-hosts.png" alt="Proxy host list" width="49%"></a>
+<a href="images/jump-dashboard.png" target="_blank"><img src="images/jump-dashboard.png" alt="Jump Host dashboard" width="49%"></a>
 
 *(click either screenshot to view full size)*
 
