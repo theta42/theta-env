@@ -10,6 +10,25 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-27
+
+### Bumped
+- sso-manager-node -> [v1.6.1](https://github.com/theta42/sso-manager-node/releases/tag/v1.6.1)
+- proxy -> [v1.5.1](https://github.com/theta42/proxy/releases/tag/v1.5.1)
+
+Both apps had every native `alert()`/`confirm()` call removed, replaced by
+`@simpleworkjs/frontend`'s `app.messages.action`/`confirm`/`toast` (the
+same modules adopted in [1.8.0](#180---2026-07-27)). This was found live,
+mid browser-verification of that release: clicking sso-manager-node
+directory.ejs's "Rotate Client Secret" triggered a native `confirm()`,
+which blocks all further browser events on the page — a real hazard for
+anyone driving the app with browser automation, not just a cosmetic
+inconsistency. sso-manager-node also dropped `app.user.remove`/
+`app.oauthClient.remove` from `public/js/app.js` (dead code with a native
+`confirm()` guard and zero callers).
+
+No `setup.sh`, compose, or config change.
+
 ## [1.8.0] - 2026-07-27
 
 ### Bumped
