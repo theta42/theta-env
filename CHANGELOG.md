@@ -10,6 +10,36 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-27
+
+### Bumped
+- sso-manager-node -> [v1.6.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.6.0)
+- proxy -> [v1.5.0](https://github.com/theta42/proxy/releases/tag/v1.5.0)
+- jump-host -> [v1.6.0](https://github.com/theta42/jump-host/releases/tag/v1.6.0)
+
+All three apps adopt the newly published `@simpleworkjs/frontend` package's
+`app.messages`, `app.modal`, and `app.validate` modules, replacing the
+vendored `app.util.actionMessage`/`actionConfirm`/`alert` in
+`public/lib/js/app-base.js` (byte-identical across all three apps) and the
+vendored `public/lib/js/val.js` (byte-identical in sso-manager-node and
+jump-host, and the same engine plus proxy-only DNS/hostname rules in proxy).
+Message content is now HTML-escaped — the ad hoc `app.util.alert()` this
+replaces had none — and `app.messages.action` falls back to a page-wide
+toast when there's no inline `.actionMessage` target on the page. proxy's
+`host`/`target`/`hostname` wildcard-DNS validation rules (mirroring
+`utils/hostname_validate.js`) move to its own `public/js/app.js`, registered
+via `$.validateSettings`, since they're proxy-specific and don't belong in
+the shared package's generic rule set (`eq`/`user`/`password`/`ip`).
+jump-host doesn't currently use any `[validate]` attributes, so its `val.js`
+swap is dedup/future-proofing rather than a behavior change.
+
+`app.api`/`app.auth`/`app.pubsub`/`app.socket` in each app's `app-base.js`
+are untouched: they're app-specific (a dual-mode callback/promise API with
+`auth-token` header injection) and not something the frontend package's
+generic `app.js` provides, so it isn't loaded.
+
+No `setup.sh`, compose, or config change.
+
 ## [1.7.0] - 2026-07-27
 
 ### Bumped
