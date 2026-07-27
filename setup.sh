@@ -165,6 +165,22 @@ export CFG_JUMP_HOST_ENABLED CFG_JUMP_HOST
 # When enabled, activate the compose profile so `up`/`ps` include the service.
 if [[ "$JUMP_ENABLED" == "1" ]]; then export COMPOSE_PROFILES="jump-host"; fi
 
+# ── Optional outbound HTTP(S) proxy for docker build + the running containers ─
+# CFG_HTTP_PROXY / CFG_HTTPS_PROXY / CFG_NO_PROXY (from ./setup.env or the
+# environment) — NOT the theta42 "proxy" app; this is an upstream HTTP proxy
+# for reaching the internet (npm/apt during image builds, and SMTP/ACME/DNS
+# provider calls at runtime), useful on isolated/offline/corporate-network
+# test hosts. Off by default. docker-compose.yml passes these through as both
+# build args (Docker also recognizes them as predefined build ARGs) and
+# container environment on every service, so one setup.env entry covers the
+# whole stack.
+export CFG_HTTP_PROXY="${CFG_HTTP_PROXY:-}"
+export CFG_HTTPS_PROXY="${CFG_HTTPS_PROXY:-${CFG_HTTP_PROXY:-}}"
+export CFG_NO_PROXY="${CFG_NO_PROXY:-localhost,127.0.0.1,sso-manager,proxy,jump-host}"
+if [[ -n "$CFG_HTTP_PROXY" ]]; then
+	info "Using HTTP proxy for docker build + containers: $CFG_HTTP_PROXY"
+fi
+
 # ── 1. Update submodules to their latest release tag, verify build contexts ───
 # Submodules track release tags (vX.Y.Z), not the tip of master -- so
 # "update" means "move to the newest tag", not "move to the newest commit".
