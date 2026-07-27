@@ -10,6 +10,28 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-27
+
+### Bumped
+- sso-manager-node -> [v1.5.1](https://github.com/theta42/sso-manager-node/releases/tag/v1.5.1)
+- jump-host -> [v1.5.0](https://github.com/theta42/jump-host/releases/tag/v1.5.0)
+
+Two production bugs fixed: `PUT /api/user/:uid` 500'd with an LDAP
+`ObjectClassViolationError` when setting `sshPublicKey` on any account
+predating the `ldapPublicKey` objectClass (notably the bootstrap admin) —
+and the exact same bug, in the shared `@simpleworkjs/ldap` package's
+`addSshKey`, was silently aborting SSH connections at jump-host's
+key-injection step for the same class of accounts. Both are fixed by
+ensuring the objectClass is present before writing the attribute. Also
+fixed: the Directory's "add resource" modal left the parent-Service
+dropdown blank when adding an OAuth Integration.
+
+Jump-host's web dashboard also gained a "Hosts you can reach" list
+(admins see "All hosts") — previously it only showed usage metrics with
+no way to see your actual access from the browser.
+
+No `setup.sh`, compose, or config change.
+
 ## [1.6.0] - 2026-07-26
 
 ### Bumped
