@@ -10,6 +10,24 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-26
+
+### Bumped
+- jump-host -> [v1.4.0](https://github.com/theta42/jump-host/releases/tag/v1.4.0)
+
+Jump-host gains **standalone mode**: it can now run with no LDAP directory and
+no SSO Manager at all, storing users and hosts itself via
+`@simpleworkjs/orm` (Sequelize; SQLite by default, any Sequelize-supported
+dialect). This is an app-internal capability, opt-in via
+`standalone.enabled` in jump-host's own config — the bundled theta-env stack
+is unaffected and continues to wire jump-host to the shared LDAP directory
+and SSO Manager as before. Two bugs were also fixed in jump-host's SSH
+server: an ephemeral listen port (`0`) was silently overridden back to the
+default, and session listeners could miss a client's immediate `exec`/`shell`
+request.
+
+No `setup.sh`, compose, or config change on the theta-env side.
+
 ## [1.5.0] - 2026-07-26
 
 ### Bumped
