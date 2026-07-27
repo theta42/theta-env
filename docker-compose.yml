@@ -36,6 +36,12 @@ services:
         # setup.sh sets this from the host, where the submodule resolves
         # correctly (git -C sso-manager-node rev-parse --short HEAD).
         GIT_COMMIT: ${SSO_GIT_COMMIT:-}
+        # Optional upstream HTTP(S) proxy for npm/apt during the build (NOT
+        # the theta42 "proxy" app). Set CFG_HTTP_PROXY in setup.env; empty by
+        # default, so this is a no-op unless configured.
+        HTTP_PROXY: ${CFG_HTTP_PROXY:-}
+        HTTPS_PROXY: ${CFG_HTTPS_PROXY:-}
+        NO_PROXY: ${CFG_NO_PROXY:-}
     container_name: sso-manager
     restart: unless-stopped
     networks: [theta-net]
@@ -58,6 +64,11 @@ services:
       - NODE_PORT=3001
       - LDAP_SERVER_ID=${LDAP_SERVER_ID:-}
       - LDAP_REPLICATION_HOSTS=${LDAP_REPLICATION_HOSTS:-}
+      # Optional upstream HTTP(S) proxy for outbound calls (SMTP, etc.) at
+      # runtime. See the build args above for the same setting during build.
+      - HTTP_PROXY=${CFG_HTTP_PROXY:-}
+      - HTTPS_PROXY=${CFG_HTTPS_PROXY:-}
+      - NO_PROXY=${CFG_NO_PROXY:-}
     volumes:
       # Operator-edited SSO secrets (sso-secrets.js). Read-WRITE so the bootstrap
       # can write the generated OAuth client creds into proxy-secrets.js. The
@@ -91,6 +102,11 @@ services:
         # setup.sh sets this from the host, where the submodule resolves
         # correctly (git -C proxy rev-parse --short HEAD).
         GIT_COMMIT: ${PROXY_GIT_COMMIT:-}
+        # Optional upstream HTTP(S) proxy for npm/apt during the build. See
+        # the sso-manager service above for details.
+        HTTP_PROXY: ${CFG_HTTP_PROXY:-}
+        HTTPS_PROXY: ${CFG_HTTPS_PROXY:-}
+        NO_PROXY: ${CFG_NO_PROXY:-}
     container_name: proxy
     restart: unless-stopped
     networks: [theta-net]
@@ -110,6 +126,11 @@ services:
       # not from env. NODE_ENV/NODE_PORT are process env the app reads directly.
       - NODE_ENV=production
       - NODE_PORT=3000
+      # Optional upstream HTTP(S) proxy for outbound calls (ACME/Let's
+      # Encrypt, DNS providers) at runtime.
+      - HTTP_PROXY=${CFG_HTTP_PROXY:-}
+      - HTTPS_PROXY=${CFG_HTTPS_PROXY:-}
+      - NO_PROXY=${CFG_NO_PROXY:-}
     volumes:
       # Operator-edited proxy secrets (proxy-secrets.js). READ-ONLY — the proxy
       # only reads it; the sso-manager bootstrap writes the OAuth creds. The
@@ -142,6 +163,11 @@ services:
       dockerfile: Dockerfile
       args:
         GIT_COMMIT: ${JUMP_GIT_COMMIT:-}
+        # Optional upstream HTTP(S) proxy for npm/apt during the build. See
+        # the sso-manager service above for details.
+        HTTP_PROXY: ${CFG_HTTP_PROXY:-}
+        HTTPS_PROXY: ${CFG_HTTPS_PROXY:-}
+        NO_PROXY: ${CFG_NO_PROXY:-}
     container_name: jump-host
     restart: unless-stopped
     networks: [theta-net]
@@ -153,6 +179,11 @@ services:
       - "${JUMP_WEB_BIND:-0.0.0.0}:${JUMP_WEB_PORT:-3002}:3002"  # web UI/API
     environment:
       - NODE_ENV=production
+      # Optional upstream HTTP(S) proxy for outbound calls (the directory API
+      # client) at runtime.
+      - HTTP_PROXY=${CFG_HTTP_PROXY:-}
+      - HTTPS_PROXY=${CFG_HTTPS_PROXY:-}
+      - NO_PROXY=${CFG_NO_PROXY:-}
     volumes:
       - ./config:/config:ro         # jump-secrets.js (written by ensure_config/bootstrap)
       - jump-data:/var/lib/jump-host  # generated host keys persist here
