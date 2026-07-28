@@ -10,6 +10,19 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-28
+
+### Added
+- **`test/check_jump_ldap_tls.js`**, wired into the `Lint` workflow: a static consistency check on the jump-secrets.js template `bootstrap.js` generates, so the `ldap://` + `tlsOptions` mistake that broke every SSH login in 1.10.0 fails CI before it ever reaches a real deployment again.
+- **A static "no native `alert()`/`confirm()`/`prompt()`" check** is now part of all three apps' own test suites (they block all further browser events on the page — see 1.9.0/1.10.0's release notes).
+
+### Bumped
+- sso-manager-node -> [v1.6.2](https://github.com/theta42/sso-manager-node/releases/tag/v1.6.2) — fixes `DELETE /api/oauth/client/:id` (`client.remove is not a function`, a genuine 500 masked by tests that never checked the response status), plus the regression test above.
+- proxy -> [v1.5.2](https://github.com/theta42/proxy/releases/tag/v1.5.2) — the regression test above.
+- jump-host -> [v1.7.1](https://github.com/theta42/jump-host/releases/tag/v1.7.1) — the regression test above.
+
+No `setup.sh` or compose change.
+
 ## [1.10.0] - 2026-07-27
 
 ### Fixed
