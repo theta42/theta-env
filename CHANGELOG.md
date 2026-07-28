@@ -10,6 +10,19 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-07-28
+
+### Added
+- **proxy's host modal now has a footer (created/updated-by/on metadata) and a linkable `/hosts/{host}` URL**, migrated onto the same shared `app.modal` component as sso-manager-node's resource modal — continuing the entity-modal standardization across the stack.
+
+### Fixed
+- **proxy: the Let's-Encrypt challenge-type/wildcard-matching visibility logic could stop reacting to the hostname field after the first Add/Edit host**, and **the SSO allow-list autocomplete could go empty starting on the second Add/Edit** — both were DOM-rebuild timing bugs in the same class as the resource-modal fixes already shipped.
+- **sso-manager-node: the resource modal's "Associated LDAP Groups" autocomplete went empty after the first Add/Edit** — same DOM-rebuild timing bug, now fixed.
+
+### Bumped
+- sso-manager-node -> [v1.8.1](https://github.com/theta42/sso-manager-node/releases/tag/v1.8.1)
+- proxy -> [v1.6.0](https://github.com/theta42/proxy/releases/tag/v1.6.0)
+
 ## [1.16.0] - 2026-07-28
 
 ### Added
