@@ -2,7 +2,9 @@ name: Lint
 
 # theta-env has no app code of its own to unit-test (it orchestrates the
 # proxy/sso-manager-node submodules) -- this checks the one thing that can
-# actually break silently: setup.sh and bootstrap.js.
+# actually break silently: setup.sh and bootstrap.js, plus a static
+# consistency check on the config bootstrap.js generates for jump-host
+# (test/check_jump_ldap_tls.js).
 on:
   pull_request:
     branches:
@@ -39,3 +41,6 @@ jobs:
 
       - name: Syntax check
         run: node --check bootstrap/bootstrap.js
+
+      - name: Jump-host LDAP config consistency
+        run: node test/check_jump_ldap_tls.js
