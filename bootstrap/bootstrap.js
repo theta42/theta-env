@@ -527,7 +527,16 @@ function writeJumpSecrets(apiToken, oidc, localAdminPass) {
 module.exports = {
 \tname: ${JSON.stringify(sso.name || 'SSO Manager')},
 \tldap: {
-\t\turl: 'ldap://sso-manager:389',
+\t\t// ldaps:// (636), not ldap:// (389): @simpleworkjs/ldap's client always
+\t\t// sets tlsOptions (see jump-host's models/user_ldap.js), and ldapts
+\t\t// treats a non-empty tlsOptions as "use implicit TLS" regardless of the
+\t\t// URL scheme -- pointed at the plain port, that means it opens a raw TLS
+\t\t// handshake against a server expecting plaintext LDAP, which slapd just
+\t\t// drops (logged as "connection lost", no BIND ever attempted). This bit
+\t\t// jump-host silently: every SSH login failed with the generic
+\t\t// "Permission denied" for any password, because getUser()/checkPassword()
+\t\t// never even reached slapd.
+\t\turl: 'ldaps://sso-manager:636',
 \t\tbindDN: ${JSON.stringify(BIND_DN)},
 \t\tbindPassword: ${JSON.stringify(ADMIN_PASS)},
 \t\tuserBase: ${JSON.stringify(`ou=people,${BASE_DN}`)},
