@@ -292,6 +292,16 @@ module.exports = {
 		jwtSecret: $(js_str "$CFG_JWT_SECRET"),
 		token_lifetime: { access_token: 3600, refresh_token: 2592000 },
 	},
+	// Without this, @simpleworkjs/orm falls back to './config/inventory.sqlite'
+	// relative to the app's /app cwd -- inside the container's ephemeral layer,
+	// not any mounted volume -- so every Resource/site/host/service/oauth row
+	// (the whole Directory Management page) would be silently wiped on every
+	// container recreate. /data is already a persisted volume (Redis lives
+	// there too), so this just co-locates the sqlite file with it.
+	orm: {
+		dialect: 'sqlite',
+		storage: '/data/inventory.sqlite',
+	},
 
 	// ── Orchestrator-only (ignored by the app) ───────────────────────────────
 	stack: {

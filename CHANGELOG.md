@@ -10,6 +10,14 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-07-28
+
+### Fixed
+- **sso-manager's Directory data (every site/host/service/oauth-client resource and their relationships/LDAP-group associations) had no persistent volume** — `@simpleworkjs/orm` fell back to `./config/inventory.sqlite` (relative to the app's `/app` cwd) whenever `conf.orm` wasn't set, which sits in the container's ephemeral writable layer, not any mounted volume. Every container recreate (`docker compose up --build`, `down`/`up`, an image rebuild) silently wiped the entire Directory Management page. `setup.sh`'s generated `sso-secrets.js` (and the example template) now set `orm: { dialect: 'sqlite', storage: '/data/inventory.sqlite' }`, co-locating it with the already-persisted `sso-data` volume (where Redis lives). **Existing deployments**: this repo doesn't rewrite an operator's existing `config/sso-secrets.js` (re-running `setup.sh` leaves it untouched by design) — add the `orm` block above manually, and copy the container's current `/app/config/inventory.sqlite` to `/data/inventory.sqlite` *before* recreating the container, or the existing Directory data will be lost on the next recreate instead of migrated.
+
+### Bumped
+- sso-manager-node -> [v1.8.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.8.0)
+
 ## [1.14.0] - 2026-07-28
 
 ### Fixed
