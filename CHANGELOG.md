@@ -10,6 +10,16 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-27
+
+### Fixed
+- **`bootstrap/bootstrap.js`'s jump-secrets.js template now points jump-host at `ldaps://sso-manager:636`**, not `ldap://sso-manager:389`. The plain-port URL combined with jump-host's `tlsOptions` made `ldapts` attempt implicit TLS against a port serving plaintext LDAP — slapd dropped every connection before any LDAP message parsed, so SSH password login failed for every account, with any password, indistinguishable from a wrong credential. Root-caused by standing up a local jump-host, editing its config, and calling `getUser`/`checkPassword` directly inside the container. **Existing deployments must edit `./config/jump-secrets.js` themselves** (this template only affects fresh bootstraps) — see theta42/theta-env#99. Companion defensive fix: [simpleworkjs/ldap v1.0.2](https://github.com/simpleworkjs/ldap/releases/tag/v1.0.2) now rejects this `ldap://` + `tlsOptions` combination outright.
+
+### Bumped
+- jump-host -> [v1.7.0](https://github.com/theta42/jump-host/releases/tag/v1.7.0) — adds self-service API tokens (create/list/rotate/revoke from its dashboard); jump-host previously had none.
+
+No `setup.sh` or compose change.
+
 ## [1.9.0] - 2026-07-27
 
 ### Bumped
