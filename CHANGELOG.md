@@ -10,6 +10,17 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-07-28
+
+### Fixed
+- **jump-host's Redis had zero persistence** (`--save '' --appendonly no`, no data-dir volume) — every container rebuild/recreation (including a `setup.sh` re-run) silently wiped all sessions, in-flight OAuth logins, and any admin-created API token. This is the root cause of the reported "re-running setup.sh breaks OAuth with jump" — the jump-host container gets recreated, and any token or in-flight login vanished with it, while proxy was unaffected because its Redis was already persisted. Now jump-host's Redis persists (AOF + periodic RDB) to `/data`, mounted as a new named volume, `jump-redis-data`. Verified live: minted a PAT, force-recreated the container, confirmed the same PAT still authenticated afterward.
+
+### Changed
+- `docker-compose.yml`: added the `jump-redis-data` volume, mounted at `/data` on the `jump-host` service.
+
+### Bumped
+- jump-host -> [v1.8.1](https://github.com/theta42/jump-host/releases/tag/v1.8.1)
+
 ## [1.13.0] - 2026-07-28
 
 ### Fixed
