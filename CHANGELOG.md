@@ -10,6 +10,17 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-07-28
+
+### Added
+- **"Quick Jump" copy-to-clipboard section on the jump-host dashboard** — one-click-copy SSH commands (interactive-picker mode, plus a per-host `uid_-_target` grammar-mode command) instead of having to remember/reconstruct the format by hand.
+
+### Fixed
+- **jump-host audit records for a failed downstream connection only ever said `upstream-unreachable`**, with no way to tell a network-layer failure from an auth failure — the real error (ECONNREFUSED, ETIMEDOUT, an ssh2 auth-failure message, etc.) is now captured and shown as a tooltip on the audit table's fail badge.
+
+### Bumped
+- jump-host -> [v1.9.0](https://github.com/theta42/jump-host/releases/tag/v1.9.0)
+
 ## [1.15.0] - 2026-07-28
 
 ### Fixed
