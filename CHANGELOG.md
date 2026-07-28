@@ -10,6 +10,13 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-07-28
+
+### Bumped
+- sso-manager-node -> [v1.6.3](https://github.com/theta42/sso-manager-node/releases/tag/v1.6.3) — fixes the root cause of a real "lost user" report: `routes/group.js` never invalidated the User cache on membership changes, so an account added to the `app_sso_service_account` marker group (which hides accounts from the Users page's People tab) could look like it had vanished for up to 5 minutes — and, separately, could be added to that group with no warning at all. Both fixed; see the linked release for detail.
+
+No `setup.sh` or compose change.
+
 ## [1.11.0] - 2026-07-28
 
 ### Added
