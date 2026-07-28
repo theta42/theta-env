@@ -10,6 +10,26 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-07-28
+
+### Fixed
+Found via feedback on a fresh install:
+- **jump-host's OAuth client had no parent in the Directory.** `seedDirectory()` only ever linked the proxy's OAuth client; jump-host's own (minted by `provisionJumpHost`) was created but never passed through, so it never got a `ResourceEdge`. Existing deployments self-heal on the next `setup.sh` run.
+- **TUI-mode SSH connections (bare `ssh user@host`) could drop** with "PTY allocation request failed" / "shell request failed" — a session-listener race in jump-host, same class of bug `runGrammar` already had a fix for.
+- **Every form submit briefly showed literal HTML** instead of a loading spinner, across all three apps.
+- **`POST /api/user/` and `PUT /api/user/password` had no success message** — a green notification with nothing in it right after adding a user.
+- **The login page gave no explanation for why the user landed there** when redirected mid-OAuth-flow.
+
+### Changed
+- **Directory: tree view is now the only view; clicking a resource's name opens its detail modal.**
+
+### Bumped
+- sso-manager-node -> [v1.7.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.7.0)
+- proxy -> [v1.5.3](https://github.com/theta42/proxy/releases/tag/v1.5.3)
+- jump-host -> [v1.8.0](https://github.com/theta42/jump-host/releases/tag/v1.8.0)
+
+No `setup.sh` or compose change. Also confirmed (no fix needed): the Let's Encrypt ACME account key persists correctly across container rebuilds — `lua-resty-auto-ssl`'s Redis storage adapter writes through the bundled Redis, which is started with `--appendonly yes` into `/data`, mapped to the persisted `proxy-data` volume. Only an explicit `docker-compose down -v` / volume removal would lose it (which is also what's required, and expected, on a domain change).
+
 ## [1.12.0] - 2026-07-28
 
 ### Bumped
