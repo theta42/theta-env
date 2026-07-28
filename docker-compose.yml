@@ -187,6 +187,7 @@ services:
     volumes:
       - ./config:/config:ro         # jump-secrets.js (written by ensure_config/bootstrap)
       - jump-data:/var/lib/jump-host  # generated host keys persist here
+      - jump-redis-data:/data         # Redis (sessions, OAuth state, API tokens) persists here
 
 networks:
   theta-net:
@@ -200,3 +201,4 @@ volumes:
   proxy-cache:
   proxy-logs:
   jump-data:
+  jump-redis-data:
