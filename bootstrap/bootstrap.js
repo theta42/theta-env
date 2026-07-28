@@ -334,7 +334,7 @@ const HOST_FACTS = {
 	kernel: process.env.STACK_HOST_KERNEL || '',
 };
 
-async function seedDirectory(token, clientId) {
+async function seedDirectory(token, clientId, jumpClientId) {
 	let resources = ((await dirGet(token, 'resources')).results) || [];
 
 	// Create a resource unless its slug (or a legacy alternate from an earlier
@@ -420,9 +420,10 @@ async function seedDirectory(token, clientId) {
 	});
 
 	// Optional SSH jump host service.
+	let jumpSvc = null;
 	if (/^(1|true|yes)$/i.test(process.env.CFG_JUMP_HOST_ENABLED || '')) {
 		const jumpHost = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
-		await ensure('service', 'SSH Jump Host', 'jump-host', host.id, {
+		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', host.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
@@ -430,19 +431,21 @@ async function seedDirectory(token, clientId) {
 		});
 	}
 
-	// Link the proxy's OAuth client (Resource-backed since sso-manager 1.3.0)
-	// under its service, if it appears in the directory and isn't linked yet.
-	if (clientId) {
-		const oauthRes = resources.find((r) => r.id === clientId);
-		if (oauthRes) {
-			const edges = ((await dirGet(token, 'edges')).results) || [];
-			const linked = edges.some((e) => e.childId === clientId);
-			if (!linked) {
-				await dirPost(token, 'edges', { parentId: psvc.id, childId: clientId, relation: 'oauth' });
-				log(`  directory: linked OAuth client under 'proxy'`);
-			}
+	// Link an OAuth client (Resource-backed since sso-manager 1.3.0) under its
+	// owning service, if it appears in the directory and isn't linked yet.
+	async function linkOauthClient(id, parent, label) {
+		if (!id || !parent) return;
+		const oauthRes = resources.find((r) => r.id === id);
+		if (!oauthRes) return;
+		const edges = ((await dirGet(token, 'edges')).results) || [];
+		const linked = edges.some((e) => e.childId === id);
+		if (!linked) {
+			await dirPost(token, 'edges', { parentId: parent.id, childId: id, relation: 'oauth' });
+			log(`  directory: linked OAuth client under '${label}'`);
 		}
 	}
+	await linkOauthClient(clientId, psvc, 'proxy');
+	await linkOauthClient(jumpClientId, jumpSvc, 'jump-host');
 }
 
 // Write the OAuth client creds back into /config/proxy-secrets.js so the proxy
@@ -582,10 +585,17 @@ module.exports = {
 	fs.writeFileSync(JUMP_SECRETS, body, { mode: 0o600 });
 }
 
+// Returns the jump host's OAuth client id (so seedDirectory can link it under
+// the SSH Jump Host service), whether or not this run actually wrote a fresh
+// jump-secrets.js -- otherwise re-runs on an already-configured deployment
+// never get a chance to self-heal a missing directory link (see the "no
+// parent" bug this was written for).
 async function provisionJumpHost(token) {
 	if (jumpFileComplete()) {
 		log('Jump host: /config/jump-secrets.js already has API token + OIDC client — keeping.');
-		return;
+		const clients = await listClients(token);
+		const existing = clients.find((c) => c.name === JUMP_CLIENT_NAME);
+		return existing ? existing.client_id : null;
 	}
 	const apiToken = await mintApiToken(token, JUMP_TOKEN_NAME);
 
@@ -607,6 +617,7 @@ async function provisionJumpHost(token) {
 	writeJumpSecrets(apiToken, oidc, localAdminPass);
 	log(`Jump host: wrote /config/jump-secrets.js (API token + OAuth client ${oidc.id}).`);
 	log(`Jump host: local admin 'jumpadmin' password: ${localAdminPass}`);
+	return oidc.id;
 }
 
 (async function main() {
@@ -654,9 +665,10 @@ async function provisionJumpHost(token) {
 
 		// Provision the jump host (mint token + write config) when enabled.
 		// Warn-only — never fail the whole bring-up over the optional service.
+		let jumpClientId = null;
 		if (JUMP_ENABLED) {
 			try {
-				await provisionJumpHost(token);
+				jumpClientId = await provisionJumpHost(token);
 				out('JUMP_HOST_CONFIGURED', '1');
 			} catch (e) {
 				log(`WARNING: jump host provisioning failed (${e.message || e}) — continuing`);
@@ -667,7 +679,7 @@ async function provisionJumpHost(token) {
 		// fails the bootstrap — warn and continue.
 		try {
 			log('Seeding directory resources...');
-			await seedDirectory(token, resolvedClientId);
+			await seedDirectory(token, resolvedClientId, jumpClientId);
 		} catch (e) {
 			log(`WARNING: directory seed failed (${e.message || e}) — continuing`);
 		}
