@@ -10,6 +10,54 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-07-28
+
+### Changed
+Cross-app API-token self-service UI unification: all 3 apps now share the
+same card-grid list, "+ New Token" modal-based create flow, `app.modal`-based
+secret reveal, and Edit modal (with real created-by/on audit metadata).
+
+#### sso-manager-node — [v1.8.2](https://github.com/theta42/sso-manager-node/releases/tag/v1.8.2), [v1.8.3](https://github.com/theta42/sso-manager-node/releases/tag/v1.8.3)
+
+**v1.8.2**
+
+##### Fixed
+- **Creating a new OAuth integration didn't reliably show the "save this client secret now" reveal modal** — `saveResource()` called `app.modal.close()` immediately before conditionally showing the secret via `app.modal.open()`. `app.modal` is a singleton, and `close()` immediately followed by `open()` collides with Bootstrap's hide-transition guard. An intervening `await loadResources()` made this race unlikely to lose in practice, but not guaranteed to — found while fixing the same, guaranteed-to-lose bug in jump-host and proxy's API-token create flows.
+
+**v1.8.3**
+
+##### Changed
+- **`profile.ejs`'s self-service API-token UI unified onto `app.modal`**, matching the pattern already shipped this round in `directory.ejs`, proxy, and jump-host: the static `#secretModal`/`#editModal` elements are retired in favor of the shared `app.modal` singleton, the always-visible inline create-form card becomes a "+ New Token" button + modal, and badge classes switch from `bg-*` to `text-bg-*`.
+- Checkmark-flash copy feedback (silently broken by FontAwesome's `<i>`→`<svg>` replacement) replaced with toast-based `copyFieldValue`, matching proxy and jump-host.
+
+#### proxy — [v1.7.0](https://github.com/theta42/proxy/releases/tag/v1.7.0)
+
+##### Added
+- **API tokens: "+ New Token" modal button (replacing the always-visible inline create-form card) and a new Edit modal** — continues the cross-app API-token UI unification started in jump-host. The Edit modal's footer shows real created-by/on data; the `PUT /api-token/:id` route already fully supported editing, so no backend change was needed.
+
+##### Fixed
+- **Creating an API token didn't show the "save this secret now" reveal modal** — the create flow called `app.modal.close()` immediately before `app.modal.open()` (to show the secret) in the same tick; since `app.modal` is a singleton, that collided with Bootstrap's hide-transition guard and the reveal modal silently never appeared.
+
+#### jump-host — [v1.10.0](https://github.com/theta42/jump-host/releases/tag/v1.10.0), [v1.10.1](https://github.com/theta42/jump-host/releases/tag/v1.10.1)
+
+**v1.10.0**
+
+##### Added
+- **API-token UI unified with sso-manager-node/proxy**: card grid replacing the bare table, a new Edit modal (footer shows real created-by/on data), and a Description field on both the create and edit flows — the model and API already fully supported all of this, it just wasn't exposed anywhere in the dashboard.
+
+##### Changed
+- `@simpleworkjs/frontend` bumped to `^0.2.6` (this app was still on `^0.2.5`).
+
+**v1.10.1**
+
+##### Fixed
+- **The API-token reveal modal silently didn't show after creating a token** — `submitApiToken()` called `app.modal.close()` immediately before `showToken()`'s `app.modal.open()` in the same tick, colliding with Bootstrap's hide-transition guard on the singleton modal. Same root cause as the OAuth-secret-reveal race fixed in sso-manager-node (v1.8.2) and the create-token race fixed in proxy (v1.7.0).
+
+### Bumped
+- sso-manager-node -> [v1.8.3](https://github.com/theta42/sso-manager-node/releases/tag/v1.8.3)
+- proxy -> [v1.7.0](https://github.com/theta42/proxy/releases/tag/v1.7.0)
+- jump-host -> [v1.10.1](https://github.com/theta42/jump-host/releases/tag/v1.10.1)
+
 ## [1.17.0] - 2026-07-28
 
 ### Added
