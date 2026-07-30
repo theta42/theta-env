@@ -88,6 +88,23 @@ rand_hex() {
 	fi
 }
 
+# Upsert KEY=VALUE into ./.env, which `docker compose` auto-loads for every
+# future invocation in this directory. Used to persist the *_GIT_COMMIT build
+# args (see SSO_GIT_COMMIT/PROXY_GIT_COMMIT/JUMP_GIT_COMMIT below) so that an
+# ad-hoc `docker compose up --build <service>` run later, OUTSIDE this script,
+# still resolves the right commit instead of silently baking "unknown" (the
+# submodule .git pointer file can't be resolved from inside the build
+# context, so the value must come from the host via this file or the export).
+env_upsert() {
+	local key="$1" val="$2" file=./.env
+	touch "$file"
+	if grep -q "^${key}=" "$file" 2>/dev/null; then
+		sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+	else
+		printf '%s=%s\n' "$key" "$val" >> "$file"
+	fi
+}
+
 # Detect docker compose (v2 plugin `docker compose` or v1 standalone `docker-compose`).
 if docker compose version >/dev/null 2>&1; then
 	COMPOSE=(docker compose)
@@ -637,6 +654,7 @@ backup_before_rebuild
 # docker-compose.yml and sso-manager-node's Dockerfile.openldap.
 SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export SSO_GIT_COMMIT
+env_upsert SSO_GIT_COMMIT "$SSO_GIT_COMMIT"
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 
@@ -722,6 +740,7 @@ fi
 # PROXY_GIT_COMMIT: same reasoning as SSO_GIT_COMMIT above.
 PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export PROXY_GIT_COMMIT
+env_upsert PROXY_GIT_COMMIT "$PROXY_GIT_COMMIT"
 info "Building + starting proxy (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build proxy
 
@@ -788,6 +807,7 @@ if [[ "$JUMP_ENABLED" == "1" ]]; then
 	JUMP_HOST="${CFG_JUMP_HOST:-jump.${SSO_HOST#sso.}}"
 	JUMP_GIT_COMMIT="$(git -C jump-host rev-parse --short HEAD 2>/dev/null || echo unknown)"
 	export JUMP_GIT_COMMIT
+	env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
 	info "Building + starting jump-host (optional; enabled via CFG_JUMP_HOST_ENABLED)..."
 	"${COMPOSE[@]}" up -d --build jump-host
 
