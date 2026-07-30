@@ -189,6 +189,31 @@ services:
       - jump-data:/var/lib/jump-host  # generated host keys persist here
       - jump-redis-data:/data         # Redis (sessions, OAuth state, API tokens) persists here
 
+  # A real, LDAP-joined (SSSD + AuthorizedKeysCommand) downstream host for
+  # testing jump-host's actual key-injection -> upstream-connect flow --
+  # a container with a manually-dropped public key in authorized_keys never
+  # exercises the LDAP-key-serving path a real production host does. Built
+  # from the theta42/ldap-client submodule -- see ./config/ldap-test-host.vars
+  # for setup notes. Same jump-host profile, so
+  # `docker compose --profile jump-host up` brings up jump-host and a host it
+  # can actually reach together.
+  ldap-test-host:
+    profiles: ["jump-host"]
+    build:
+      context: ./ldap-client
+      dockerfile: Dockerfile
+    container_name: ldap-test-host
+    hostname: ldap-test-host
+    restart: unless-stopped
+    networks: [theta-net]
+    depends_on:
+      sso-manager:
+        condition: service_healthy
+    privileged: false
+    volumes:
+      - ./config/ldap-test-host.vars:/config/ldap.vars:ro
+      - ./config/ldap-ca.crt:/config/ldap-ca.crt:ro
+
 networks:
   theta-net:
     driver: bridge

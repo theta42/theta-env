@@ -1,0 +1,26 @@
+# ldap-client config for the optional local jump-host test fixture
+# (ldap-test-host service in docker-compose.yml, jump-host compose profile).
+# Copy to ./config/ldap-test-host.vars and fill in the bind password from
+# your own ./config/sso-secrets.js's `serviceAccountPass` (the
+# cn=ldapclient,ou=people,<base> service account bootstrap/bootstrap.js
+# creates specifically for this kind of 3rd-party/container LDAP bind).
+#
+# This is what lets ldap-test-host be a REAL SSSD+AuthorizedKeysCommand-joined
+# downstream host, so jump-host's key-injection -> upstream-connect flow can
+# be exercised end-to-end against something more than a container with a
+# manually-dropped public key in authorized_keys.
+export ldap_host="sso-manager"
+export ldap_base_dn="dc=localtest,dc=me"
+
+export ldap_bind_dn="cn=ldapclient,ou=People,$ldap_base_dn"
+export ldap_bind_password="REPLACE_WITH_serviceAccountPass_FROM_sso-secrets.js"
+
+# sso_url/sso_token deliberately left unset -- register the host + access
+# group manually via the Directory admin API instead (index.sh's optional
+# auto-registration also wants a parent site Resource to exist first).
+# index.sh gates that block on `[[ -v sso_token ]]`, which is true even for
+# an empty string, so leave these genuinely absent, not "".
+
+export ldap_location="jumptest"
+
+ldap_access_groups=( "${ldap_location}_access" "${ldap_location}_host_$(hostname)_access" )
