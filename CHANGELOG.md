@@ -10,6 +10,48 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-07-30
+
+### Added
+- **`setup.sh` persists `SSO_GIT_COMMIT`/`PROXY_GIT_COMMIT`/`JUMP_GIT_COMMIT` into `./.env`** (new `env_upsert` helper), which `docker compose` auto-loads on every future invocation in this directory. Previously these were only `export`ed for the current shell, so an ad-hoc `docker compose up --build <service>` run later (outside a full `setup.sh` run) would build with an empty `GIT_COMMIT` arg — and since each submodule's checked-out `.git` is a pointer file, not a real repo, the in-container git fallback can't resolve it either, so the image silently baked "unknown" as its commit hash. `.gitignore`'s `.env` comment updated to describe this (it was previously labeled "legacy, no longer used").
+
+### Submodules bumped
+- jump-host `v1.10.2` -> [`v1.11.0`](https://github.com/theta42/jump-host/releases/tag/v1.11.0)
+- ldap-client `v1.0.0` -> [`v1.1.0`](https://github.com/theta42/ldap-client/releases/tag/v1.1.0)
+- proxy `v1.8.0` -> [`v1.9.0`](https://github.com/theta42/proxy/releases/tag/v1.9.0)
+- sso-manager-node `v1.9.0` -> [`v1.10.0`](https://github.com/theta42/sso-manager-node/releases/tag/v1.10.0)
+
+#### sso-manager-node — [v1.10.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.10.0)
+
+##### Added
+- `app_super_admin` cross-app group: members are full admins here regardless of `app_sso_admin` membership. The same group is now also recognized by proxy and jump-host, and by `ldap-client`'s SSSD access filter (SSH login on every host).
+
+##### Changed
+- Renamed the Executive page to Overview (route, view, `/api/metrics/overview`, nav label, docs). `/executive` kept as a 301 redirect.
+
+#### proxy — [v1.9.0](https://github.com/theta42/proxy/releases/tag/v1.9.0)
+
+##### Added
+- `app_super_admin` cross-app group recognized as a global admin (`conf.auth.adminGroups`).
+
+##### Changed
+- Users and Permissions pages: the always-visible sidebar "Add" forms are now an "Add User"/"Add Permission" button that opens an `app.modal` dialog, matching the hosts.ejs convention.
+- Let's Encrypt ACME account key now defaults to the already-persisted `/data` volume instead of a CWD-relative path (`./le_key.cert` -> `/app/le_key.cert` in the container), which was lost on every image rebuild.
+
+#### jump-host — [v1.11.0](https://github.com/theta42/jump-host/releases/tag/v1.11.0)
+
+##### Added
+- `app_super_admin` (cross-app) and `app_jump_admin` groups: super admins are full admins here same as `app_sso_admin`; jump admins get audit page/data access without other admin rights. The Audit page/API is now actually admin-gated server-side (previously the page shell rendered for any logged-in user, only its data was gated).
+- Host list adds Last connection/Last failed connection columns and highlights rows green (a session is live right now) or yellow (the most recent attempt failed), backed by new per-host last-success/last-fail timestamps.
+
+##### Changed
+- Dashboard's stat boxes and Top hosts/Top users cards moved to the Audit page. "All hosts" renamed to "My hosts".
+
+#### ldap-client — [v1.1.0](https://github.com/theta42/ldap-client/releases/tag/v1.1.0)
+
+##### Added
+- `app_super_admin` cross-app group now grants SSH login access to every host (`ldap_access_filter` + `ldap_access_groups`), matching the same group's admin rights in sso-manager-node, proxy, and jump-host. Sudo is not yet extended to super admins (`ldap_sudo_search_filter` remains non-functional on this SSSD version — pre-existing, documented gap).
+
 ## [1.19.0] - 2026-07-30
 
 ### Added
