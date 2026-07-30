@@ -10,6 +10,53 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-07-30
+
+### Added
+- **New `ldap-client` submodule + `ldap-test-host` service** (`jump-host` compose profile): a real SSSD + AuthorizedKeysCommand LDAP-joined downstream host for testing jump-host's actual key-injection -> upstream-connect flow end-to-end against this stack's own local LDAP, instead of a container with a manually-dropped public key in `authorized_keys`. Verified live (SSH CLI and WinSCP) through jump-host's `uid_-_target` grammar.
+
+#### ldap-client — [v1.0.0](https://github.com/theta42/ldap-client/releases/tag/v1.0.0) (first tagged release)
+
+##### Added
+- Docker test fixture (`Dockerfile` + `entrypoint.sh`): Ubuntu 22.04 + sssd + sshd, no systemd required.
+
+##### Fixed
+Building that fixture surfaced three real bugs that would break login on any deployment, not just the test fixture:
+- `sssd.conf.mo` used `ldap_bind_dn`/`ldap_bind_pw`, which aren't real SSSD options — corrected to `ldap_default_bind_dn` / `ldap_default_authtok(_type)`.
+- `sssd.conf.mo` had no explicit `services =` list, so SSSD started only its backend, never the nss/pam responders — `getent passwd <ldap-user>` silently failed even with the domain reachable.
+- `ldap-ssh-key.sh`'s `memberof` filter was missing the `cn=` prefix on the group name, so the AuthorizedKeysCommand script always returned zero keys for a correctly-provisioned user — no error, just silently nothing.
+
+#### sso-manager-node — [v1.9.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.9.0)
+
+##### Added
+- Directory modal's Associated LDAP Groups tab now supports full membership management: view, add, and remove members/owners of each associated group directly from the tab.
+- `app.util.revealItem()` (shared `app-base.js`): scrolls a just-added/-edited element into view and flashes its background.
+
+##### Changed
+- Groups page's search/sort bar is now sticky while scrolling.
+- Directory table: Kind/Name/Env/Host merged into a single "Resource" column.
+
+#### proxy — [v1.8.0](https://github.com/theta42/proxy/releases/tag/v1.8.0)
+
+##### Added
+- Users backed by SSO/OIDC login are now marked "External (SSO)" and read-only (password-change hidden client-side, `PUT /password/:username` rejects with 403 server-side). Redis user-backend only.
+
+##### Changed
+- All pages now wrap their content in a standard-width container, matching sso-manager-node instead of rendering full-bleed.
+- Users and Permissions pages converted from bare `<table>`s to the card-grid convention already used on the Groups page.
+
+#### jump-host — [v1.10.2](https://github.com/theta42/jump-host/releases/tag/v1.10.2)
+
+##### Changed
+- Dashboard, Sessions, and Audit pages now match sso-manager-node/proxy's page width.
+- Audit's nav entry is now admin-gated (`groups: ['admin']`).
+
+### Bumped
+- sso-manager-node -> [v1.9.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.9.0)
+- proxy -> [v1.8.0](https://github.com/theta42/proxy/releases/tag/v1.8.0)
+- jump-host -> [v1.10.2](https://github.com/theta42/jump-host/releases/tag/v1.10.2)
+- ldap-client -> [v1.0.0](https://github.com/theta42/ldap-client/releases/tag/v1.0.0) (new submodule)
+
 ## [1.18.0] - 2026-07-28
 
 ### Changed
