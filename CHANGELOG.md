@@ -10,6 +10,30 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-07-31
+
+### Submodules bumped
+- jump-host `v1.12.0` -> [`v1.13.0`](https://github.com/theta42/jump-host/releases/tag/v1.13.0)
+- proxy `v1.10.0` -> [`v1.11.0`](https://github.com/theta42/proxy/releases/tag/v1.11.0)
+- sso-manager-node `v1.12.0` -> [`v1.13.0`](https://github.com/theta42/sso-manager-node/releases/tag/v1.13.0)
+
+#### jump-host — [v1.13.0](https://github.com/theta42/jump-host/releases/tag/v1.13.0)
+
+##### Changed
+- **Title changed to "SSO Manager"** — the jump-host web UI now presents itself as "SSO Manager" in the navbar and page title, matching its role as the unified access portal for both services and hosts.
+
+#### sso-manager-node — [v1.13.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.13.0)
+
+##### Changed
+- **Directory page cleaned up** — removed the parent badge and slug display from the directory table; resource names now align with the badges above for a cleaner, more compact layout.
+- **Users list SSH key column fixed** — users with multiple SSH keys no longer show multiple checkmarks; the column now shows a single checkmark indicating "has key" regardless of key count.
+
+#### proxy — [v1.11.0](https://github.com/theta42/proxy/releases/tag/v1.11.0)
+
+##### Changed
+- **Permissions, Users, and Groups pages converted to table layouts** — card grids replaced with striped tables for better scanability and alignment. Users page adds per-field validation error display alongside the summary message.
+- **Groups page auto-refreshes** — adding or removing a group now triggers an explicit reload, ensuring the list stays in sync without manual refresh.
+
 ## [1.22.0] - 2026-07-31
 
 ### Submodules bumped
