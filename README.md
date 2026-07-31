@@ -26,14 +26,18 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 | --- | --- |
 | [![SSO Manager dashboard](docs/images/sso-dashboard.png)](docs/images/sso-dashboard.png) | [![Proxy host list](docs/images/proxy-hosts.png)](docs/images/proxy-hosts.png) |
 
-**Why use this instead of running the two separately?** The two only become
-useful once the proxy is registered as an OIDC client of the SSO and pointed at
-the SSO's LDAP directory — and the SSO's domain has to match across half a dozen
-config fields or logins silently fail with `Invalid Credentials`. Doing that by
-hand is fiddly and easy to get wrong. `setup.sh` asks for your domain once (in
-`setup.env`), generates both config files with it filled in everywhere, registers
-the proxy as an OIDC client, and snapshots state before every rebuild — so you
-get a working SSO + proxy stack in one command and a safe way to upgrade it.
+## Configuration
+
+`setup.sh` automates the first-run glue between subprojects:
+- Asks for your domain once (in `setup.env`) and fills it in across all config files.
+- Registers the proxy as an OIDC client of the SSO.
+- Persists submodule commit hashes in `.env` for reproducibility (e.g., `SSO_GIT_COMMIT`, `PROXY_GIT_COMMIT`). This ensures future `docker compose` runs use the same submodule versions.
+
+**Why use this instead of running the two separately?** The two only become useful once the proxy is registered as an OIDC client of the SSO and pointed at the SSO's LDAP directory — and the SSO's domain has to match across half a dozen config fields or logins silently fail with `Invalid Credentials`. Doing that by hand is fiddly and easy to get wrong. `setup.sh` handles this automatically and snapshots state before every rebuild — so you get a working SSO + proxy stack in one command and a safe way to upgrade it.
+
+## Unified Release Status
+- ✅ **Phase 1 (oidc-client)**: Complete.
+- ⏳ **Phases 2-5**: Pending (see [roadmap](#)).
 
 ```
             ┌──────────────────────────────────────────────┐
