@@ -10,6 +10,57 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-07-31
+
+### Submodules bumped
+- ldap-client `v1.1.0` -> [`v1.1.1`](https://github.com/theta42/ldap-client/releases/tag/v1.1.1)
+- sso-manager-node `v1.10.0` -> [`v1.11.0`](https://github.com/theta42/sso-manager-node/releases/tag/v1.11.0)
+
+> **Operational note — the SSO image now builds slapd from source.** OpenLDAP's
+> `nestgroup` overlay (nested groups) exists only on master; no 2.6.x release
+> ships it. `Dockerfile.openldap` therefore compiles OpenLDAP from a **pinned**
+> commit, which makes the SSO image slower to build and pulls `pw-sha2` from
+> contrib. Two consequences worth knowing:
+>
+> - Master ships **LMDB 1.0.0**, whose on-disk format is mutually unreadable
+>   with the 0.9.x in 2.6.x (`MDB_INVALID: File is not an LMDB file`). Moving an
+>   existing `/var/lib/ldap` onto this image is a `slapcat` -> `slapadd` reload,
+>   not a restart.
+> - There is a `TODO` to drop the whole from-source stage once `nestgroup` ships
+>   in a release. The entrypoint already probes for `nestgroup.so` and the app
+>   keys off `app_ldap__nestedGroupsServerSide`, so that swap needs no other
+>   changes.
+
+#### sso-manager-node — [v1.11.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.11.0)
+
+##### Added
+- **End-user catalog at `/`** — the first ungated nav item; previously every nav entry was admin-only and a normal user had no signposted destination. Search/filter, per-kind icons, and a *how to reach it* block per card: the URL for a service, the SSH invocation for a host (using the jump-host `uid_-_slug@host` grammar when `directory.jumpHost` is set).
+- **Self-service access requests** — `/api/access-requests` (create, list own, list decidable, approve, deny, withdraw) with approve/deny queues on the catalog. Approving performs the LDAP group add, so LDAP stays the access-control truth. Requests target a resource's `_access` group, never `_admin`. Replaces the "coming soon" stub.
+- **Admin access visibility** — an Access column on the directory table (member/group counts, flagging links whose LDAP group was deleted) and a "what can this user reach" lookup, the reverse question that previously had no UI at all.
+- **Nested LDAP groups.** `groupOfNames.member` already accepts a group DN, so nesting needs no schema — what it needs is resolution, which no released OpenLDAP performs. Server-side via the pinned-master `nestgroup` overlay; client-side the app computes the closure itself (cycle-detected, depth-capped) against any other server. `PUT`/`DELETE /api/group/:group/nested/:child`, `GET /api/group/:group/effective`, and a **Nested** tab on each group card.
+- **`app_super_admin` is now seeded** (it never was) and nested into `app_sso_admin` / `app_sso_invite` / `app_sso_oauth_admin`, so the privilege is real LDAP membership visible to SSSD and sudo rather than a special case in app code. Resource creation nests `app_super_admin` -> `<slug>_admin` and `<slug>_admin` -> `<slug>_access`.
+- Resource metadata `icon` and `tagline`, collected on the admin form with a live icon preview.
+
+##### Fixed
+- **`GET /api/discovery/me` returned only `isPublic` resources for every human caller** — it read `req.user.groups`, which does not exist (`req.user` carries `memberOf`), so the empty list failed open. "My Services" was blank for everyone, and `isDirectoryAdmin()` was false even for real directory admins.
+- **The portal's "Discover More Services" was dead for every non-admin** — it called the admin-gated endpoint and swallowed the 403 into an empty array.
+- **Services reported no address** — `/me` had reimplemented `getMyAccess` without its parent-walking resolution, so a service reached at its host's IP resolved to nothing.
+- `GET /api/user/me` derived `isAdmin` from `memberOf`, which is only transitive with `nestgroup`; against a stock server an admin holding their group via nesting lost the entire admin UI while still passing every server-side check.
+- `utils/permission.js`'s `byGroup` saw only direct membership.
+- Adding an existing group member, and removing a group's last member, both returned bare 500s; now 409s that explain themselves.
+- `DELETE /api/directory-admin/resources/:id` deleted the resource before its edges and group links, orphaning rows on a mid-way failure.
+- `/api/directory-admin/audit-logs` shelled out to `tail` via `execSync`; replaced with a bounded async read.
+- Broken `api.html` link in the published docs.
+
+##### Changed
+- `@simpleworkjs/directory-schema` -> `^1.1.0`, declaring ten metadata keys the admin form always wrote but the schema never listed. Undeclared keys are dropped for non-admin callers — which blanked the portal's `OS:` field, hid every service's port, and left machine tokens unable to read the port mapping the firewall consumer exists to render.
+
+#### ldap-client — [v1.1.1](https://github.com/theta42/ldap-client/releases/tag/v1.1.1)
+
+##### Fixed
+- Sets `ldap_group_nesting_level = 5` so SSSD walks nested groups itself when pointed at a server without `nestgroup`. Against the SSO's bundled slapd the existing `memberof=` access filter is already transitive, so SSH login inherits nesting for free. The explicit `app_super_admin` clause is kept, to keep super-admin login working against a directory predating the new nesting.
+
+
 ## [1.20.0] - 2026-07-30
 
 ### Added
