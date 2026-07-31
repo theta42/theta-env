@@ -10,6 +10,31 @@ for what changed inside the apps it composes.
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-07-31
+
+### Submodules bumped
+- jump-host `v1.11.0` -> [`v1.12.0`](https://github.com/theta42/jump-host/releases/tag/v1.12.0)
+- proxy `v1.9.0` -> [`v1.10.0`](https://github.com/theta42/proxy/releases/tag/v1.10.0)
+- sso-manager-node `v1.11.0` -> [`v1.12.0`](https://github.com/theta42/sso-manager-node/releases/tag/v1.12.0)
+
+#### jump-host — [v1.12.0](https://github.com/theta42/jump-host/releases/tag/v1.12.0)
+
+##### Added
+- **TUI host picker with colors**: ANSI-colored terminal UI with box-drawing header, cyan/magenta/green title treatment, per-row coloring (cyan hostnames, blue IPs), environment badges (red PROD / dim DEV), green inverse selection highlight with "◄ SELECTED ►" indicator, yellow filter text, and a footer separator with quick-select hint.
+
+#### sso-manager-node — [v1.12.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.12.0)
+
+##### Changed
+- **Catalog page (`/`) redesigned**: Removed the portal banner; "My Access" section now has tabs separating Services and Hosts; icons support both Font Awesome classes and image URLs (http/https).
+- **Profile page redesigned as a single card with tabs**: Password reset is now a modal button; "My groups", "My Services", "Security & Usage Stats", and "Members of X's group" are now tabs on the main profile card instead of separate cards; metrics display fixed to properly load and show service usage data.
+
+#### proxy — [v1.10.0](https://github.com/theta42/proxy/releases/tag/v1.10.0)
+
+##### Changed
+- **Permissions page**: Converted from card grid to table/list layout with columns: Subject, Scope, Domain, Role, Actions.
+- **Users page**: Converted from card grid to table/list layout; form validation now shows both a summary message AND per-field error messages with visual highlighting.
+- **Groups page**: Added automatic refresh after adding/deleting groups to ensure new entries appear immediately.
+
 ## [1.21.0] - 2026-07-31
 
 ### Submodules bumped
