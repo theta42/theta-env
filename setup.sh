@@ -703,6 +703,119 @@ if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets list -format=js
     docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets enable -path=secret kv-v2 >/dev/null
 fi
 
+# ── 3c. OpenBao policies, token role, per-app tokens ─────────────────────────
+# Each app gets a least-privilege scoped token (a policy over only its own
+# secret/<app>/conf). sso additionally gets the `sso-broker` policy so it can
+# mint per-user (user-<uid>) and per-app (app-<name>) tokens at runtime through
+# the sso-broker token role. The root VAULT_TOKEN stays in .env for
+# setup/maintenance ONLY and is never passed to a service container. Everything
+# here is idempotent — re-running setup.sh keeps existing policies/tokens.
+
+# Run a `bao` command inside the openbao container as root.
+bao_run() { docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao "$@"; }
+
+# Write an ACL policy from stdin HCL only if it does not already exist.
+ensure_policy() {
+	local name="$1"
+	if bao_run policy read "$name" >/dev/null 2>&1; then
+		info "  policy ${name} already exists — keeping."
+	else
+		info "  writing policy ${name}..."
+		docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao policy write "$name" - >/dev/null
+	fi
+}
+
+# Read KEY= from ./.env (empty if absent) — reuse a previously minted token
+# instead of minting a fresh one on every setup.sh run.
+env_get() {
+	local key="$1" file=./.env
+	[[ -f "$file" ]] || return 0
+	grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2-
+}
+
+# Mint an orphan, renewable token for `policy` and persist it to .env as `key`,
+# OR reuse the token already in .env if it is still valid (re-mint on expiry).
+ensure_token() {
+	local key="$1" policy="$2" existing tok
+	existing="$(env_get "$key")"
+	if [[ -n "$existing" ]] && docker exec -e BAO_TOKEN="$existing" openbao bao token lookup >/dev/null 2>&1; then
+		info "  ${key} already minted + valid — keeping."
+		return 0
+	fi
+	info "  minting ${key} (policy=${policy})..."
+	tok="$(bao_run token create -policy="$policy" -orphan=true -field=token)" \
+		|| die "failed to mint ${key} (policy=${policy})"
+	env_upsert "$key" "$tok"
+}
+
+# Seed secret/<vault_path> from a /config/*.js module on first run only
+# (skipped if the path already exists). Fail-soft: a seed failure leaves the
+# app's file-mounted config as the fallback — boot is not blocked.
+seed_app_conf() {
+	local vault_path="$1" mod="$2"
+	if bao_run kv get "secret/${vault_path}" >/dev/null 2>&1; then
+		info "  secret/${vault_path} already seeded — keeping."
+		return 0
+	fi
+	info "Seeding secret/${vault_path} from ${mod}..."
+	docker exec sso-manager node -e "console.log(JSON.stringify(require('${mod}')))" 2>/dev/null \
+		| docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao kv put "secret/${vault_path}" - >/dev/null \
+		|| warn "  could not seed secret/${vault_path} (continuing — app will use its file fallback)"
+}
+
+info "Configuring OpenBao policies..."
+# sso-broker — sso's authority to read/write its own conf, mint per-user and
+# per-app tokens (auth/token/create/sso-broker), and create the matching
+# user-<uid> / app-<name> / sso-admin policies.
+ensure_policy sso-broker <<'HCL'
+path "secret/data/sso-manager/conf" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/sso-manager/conf" { capabilities = ["list", "read", "delete"] }
+path "secret/data/users/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/users/*" { capabilities = ["list", "read", "delete"] }
+path "secret/data/apps/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/apps/*" { capabilities = ["list", "read", "delete"] }
+path "auth/token/create/sso-broker" { capabilities = ["update"] }
+path "sys/policies/acl/user-*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/policies/acl/app-*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/policies/acl/sso-admin" { capabilities = ["create", "read", "update", "delete", "list"] }
+HCL
+# sso-admin — admin users in the vault UI: read/write/list everything under secret/.
+ensure_policy sso-admin <<'HCL'
+path "secret/data/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/*" { capabilities = ["list", "read", "delete"] }
+HCL
+# proxy / jump-host — read only their own boot conf.
+ensure_policy proxy <<'HCL'
+path "secret/data/proxy/conf" { capabilities = ["read"] }
+path "secret/metadata/proxy/conf" { capabilities = ["read", "list"] }
+HCL
+ensure_policy jump-host <<'HCL'
+path "secret/data/jump-host/conf" { capabilities = ["read"] }
+path "secret/metadata/jump-host/conf" { capabilities = ["read", "list"] }
+HCL
+
+# sso-broker token role: lets sso mint user-*/app-*/sso-admin tokens. Orphan,
+# renewable, 24h period. Wildcards need allowed_policies_glob — allowed_policies
+# is exact-match only.
+info "Configuring sso-broker token role..."
+if ! bao_run read auth/token/roles/sso-broker >/dev/null 2>&1; then
+	docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao write auth/token/roles/sso-broker - <<'JSON' >/dev/null
+{"allowed_policies":["sso-admin"],"allowed_policies_glob":["user-*","app-*"],"orphan":true,"renewable":true,"token_period":"24h"}
+JSON
+else
+	info "  token role sso-broker already exists — keeping."
+fi
+
+info "Minting per-app OpenBao tokens (stored in .env, passed to containers as VAULT_TOKEN)..."
+ensure_token SSO_VAULT_TOKEN sso-broker
+ensure_token PROXY_VAULT_TOKEN proxy
+ensure_token JUMP_VAULT_TOKEN jump-host
+
+info "OpenBao secrets configured:"
+info "  policies:   sso-broker, sso-admin, proxy, jump-host (+ per-user/app created lazily by sso)"
+info "  token role: sso-broker (mints user-*/app-*/sso-admin tokens, 24h period)"
+info "  app tokens: SSO_VAULT_TOKEN, PROXY_VAULT_TOKEN, JUMP_VAULT_TOKEN in .env"
+
 # ── 4. Start SSO Manager, wait for health ─────────────────────────────────────
 # SSO_GIT_COMMIT: sso-manager-node is a git submodule here, so its .git is a
 # pointer file (not a real repo) -- the image can't resolve its own commit
@@ -727,12 +840,15 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
-if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao kv get secret/sso-manager/conf >/dev/null 2>&1; then
-    info "Seeding sso-manager/conf into Openbao..."
-    docker exec sso-manager node -e "console.log(JSON.stringify(require('/config/sso-secrets.js')))" > "$CONFIG_DIR/seed-conf.json"
-    cat "$CONFIG_DIR/seed-conf.json" | docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao kv put secret/sso-manager/conf -
-    rm -f "$CONFIG_DIR/seed-conf.json"
-fi
+info "Seeding app configs into OpenBao (idempotent)..."
+# sso-manager/conf holds the operator-set LDAP/SMTP/jwtSecret values — sso has
+# no bootstrap-generated creds, so the file is the complete source of truth.
+seed_app_conf sso-manager/conf /config/sso-secrets.js
+# proxy/conf is seeded from the operator file (placeholder OAuth creds); the
+# bootstrap (step 5) then writes the real generated OAuth client creds into
+# OpenBao over this. proxy boots at step 6, after bootstrap, so it sees the
+# real values.
+seed_app_conf proxy/conf /config/proxy-secrets.js
 
 # Read the summary values (hosts, admin, base DN) back from ./config via the
 # running container's node — works whether ./config was generated or pre-existing.
@@ -764,7 +880,11 @@ info "  Admin uid:     ${ADMIN_UID}"
 
 # ── 5. Run the bootstrap (writes CLIENT_ID/CLIENT_SECRET/ALREADY_CONFIGURED) ──
 # The bootstrap reads its inputs from /config/*.js (not env) and writes the
-# generated OAuth client creds back into /config/proxy-secrets.js. No -e flags.
+# generated OAuth client creds back into /config/proxy-secrets.js AND into
+# OpenBao (secret/proxy/conf, secret/jump-host/conf) so the proxy + jump host
+# load them from OpenBao at boot. The root VAULT_TOKEN is passed on this one
+# exec so bootstrap can write those paths; it is never handed to a service
+# container.
 info "Running bootstrap (creates/updates the LDAP service account, first admin, OAuth client)..."
 # Host facts for the directory seed — collected HERE (on the host; inside the
 # container hostname/uname describe the container, not the machine). Same
@@ -786,6 +906,8 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 	-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
 	-e CFG_JUMP_HOST_ENABLED="${CFG_JUMP_HOST_ENABLED:-}" \
 	-e CFG_JUMP_HOST="${CFG_JUMP_HOST:-}" \
+	-e VAULT_ADDR=http://openbao:8200 \
+	-e VAULT_TOKEN="$VAULT_TOKEN" \
 	sso-manager node /bootstrap/bootstrap.js) \
 	|| die "bootstrap failed:\n${BOOTSTRAP_OUT}"
 
@@ -872,6 +994,11 @@ if [[ "$JUMP_ENABLED" == "1" ]]; then
 	JUMP_GIT_COMMIT="$(git -C jump-host rev-parse --short HEAD 2>/dev/null || echo unknown)"
 	export JUMP_GIT_COMMIT
 	env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
+	# Seed jump-host/conf from the file bootstrap just wrote (it mints the API
+	# token + OAuth client into /config/jump-secrets.js at step 5). bootstrap
+	# also writes this to OpenBao directly, so this is a fallback for when
+	# bootstrap's jump provisioning warned-but-continued.
+	seed_app_conf jump-host/conf /config/jump-secrets.js
 	info "Building + starting jump-host (optional; enabled via CFG_JUMP_HOST_ENABLED)..."
 	"${COMPOSE[@]}" up -d --build jump-host
 

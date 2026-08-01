@@ -25,6 +25,9 @@ nav:
   - title: Architecture
     page: /architecture.html
     icon: fa-sitemap
+  - title: Secrets
+    page: /secrets.html
+    icon: fa-key
   - title: Standalone
     page: /standalone.html
     icon: fa-puzzle-piece
