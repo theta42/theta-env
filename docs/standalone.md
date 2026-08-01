@@ -1,16 +1,23 @@
 ---
 layout: default
 title: Standalone
-description: Running the SSO Manager or the proxy on their own, without theta-env's orchestration.
+description: Running a component individually, without theta-suite's orchestration — an advanced path; the integrated stack is the supported one.
 ---
 
-# Running each project standalone
+# Running a component individually
 
 [← Back to Home](index.html)
 
-theta-env composes the two projects but doesn't fork them — both work on their
-own. The submodules in this repo are normal clones; you can also clone them
-directly from GitHub.
+> **The integrated stack is the supported path.** `./setup.sh` wiring all four
+> components together around a shared OpenBao secrets store is what's tested and
+> released. The steps below are for the advanced case where you want to run one
+> component on its own — a separate host, a different network, or without the
+> orchestrator. Running standalone means managing secrets from the
+> `config/*-secrets.js` file only (no shared OpenBao) and doing the OIDC/LDAP
+> wiring by hand.
+
+The submodules in this repo are normal clones; you can also clone them directly
+from GitHub. Each component builds and runs on its own.
 
 ---
 
@@ -114,10 +121,12 @@ See the proxy
 
 ---
 
-## Mixing and matching
+## Wiring components together by hand
 
-theta-env isn't required to use the two together — the four wiring steps are
-documented in both projects' deployment guides:
+If you have a specific reason to run the components on separate hosts instead
+of through `./setup.sh` (and accept that you lose the shared OpenBao secrets
+store), the four wiring steps are documented in both projects' deployment
+guides:
 
 1. One Docker network (or reachable hostnames) so the proxy can reach the SSO
    internally for token/userinfo + LDAPS.
@@ -129,8 +138,8 @@ documented in both projects' deployment guides:
 4. Point the proxy's `ldap.url` at the SSO's LDAPS + create a dedicated
    `cn=ldapclient` service account; set the same password as `bindPassword`.
 
-theta-env just automates those four steps with `./setup.sh`. If you prefer to
-do them by hand (or want the two on separate hosts), follow the standalone
-guides above.
+`./setup.sh` exists to do all of this for you — and to add the OpenBao secrets
+store, jump host, and ldap-client on top. Unless you need the components on
+separate hosts, prefer the integrated stack.
 
 [← Back to Home](index.html)

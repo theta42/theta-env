@@ -1,4 +1,4 @@
-# theta-env — unified SSO Manager + Proxy.
+# theta-suite — unified SSO Manager + Proxy.
 #
 # Brings up the two all-in-one images on one bridge network so the proxy can
 # reach the SSO internally (http://sso-manager:3001 for token/userinfo,
