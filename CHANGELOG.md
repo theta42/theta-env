@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.26.0] - 2026-08-01
+
+- Made OpenBao production-ready by using a persistent file backend, enabling `IPC_LOCK`, and dynamically generating a robust config file.
+- Automated OpenBao initialization, unsealing, and secrets seeding via `setup.sh`.
+
 ## [v1.25.0] - 2026-08-01
 
 - Added OpenBao (Vault) container for secrets management and native UI proxying.

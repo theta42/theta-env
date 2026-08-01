@@ -392,6 +392,23 @@ PROXYEOF
 }
 
 ensure_config() {
+	if [[ ! -f "$CONFIG_DIR/openbao.hcl" ]]; then
+		info "Generating $CONFIG_DIR/openbao.hcl ..."
+		mkdir -p "$CONFIG_DIR"
+		cat > "$CONFIG_DIR/openbao.hcl" <<BAOEOF
+storage "file" {
+  path = "/vault/data"
+}
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  tls_disable = 1
+}
+disable_mlock = true
+ui = true
+BAOEOF
+		chmod 644 "$CONFIG_DIR/openbao.hcl"
+	fi
+
 	if [[ -f "$CONFIG_DIR/sso-secrets.js" ]]; then
 		info "Using existing $CONFIG_DIR/sso-secrets.js (operator-owned — left untouched)."
 		return 0
@@ -501,6 +518,7 @@ ensure_config() {
 	mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR"
 	write_sso_secrets
 	write_proxy_secrets
+	
 	chmod 600 "$CONFIG_DIR/sso-secrets.js" "$CONFIG_DIR/proxy-secrets.js"
 
 	if [[ "$migrated" == "1" ]]; then
@@ -646,6 +664,44 @@ backup_before_rebuild() {
 }
 backup_before_rebuild
 
+# ── 3b. Setup OpenBao (Vault) ────────────────────────────────────────────────
+info "Starting openbao..."
+"${COMPOSE[@]}" run --rm --user root openbao chown -R 100:1000 /vault/data
+"${COMPOSE[@]}" up -d openbao
+info "Waiting for openbao to be reachable..."
+for i in $(seq 1 30); do
+	if docker exec openbao bao status >/dev/null 2>&1 || [[ $? -eq 2 ]]; then
+		info "openbao is reachable."; break
+	fi
+	if (( i == 30 )); then die "openbao did not become reachable in 60s. Check: ${COMPOSE[*]} logs openbao"; fi
+	sleep 2
+done
+
+if ! docker exec openbao bao status -format=json 2>/dev/null | grep -q '"initialized": true' || true; then
+    status_json=$(docker exec openbao bao status -format=json 2>/dev/null || true)
+    if ! echo "$status_json" | grep -q '"initialized": true'; then
+        info "Initializing openbao for the first time..."
+        docker exec openbao bao operator init -key-shares=1 -key-threshold=1 -format=json > "$CONFIG_DIR/bao-init.json"
+        chmod 600 "$CONFIG_DIR/bao-init.json"
+        info "Openbao initialized. Keys saved to $CONFIG_DIR/bao-init.json"
+    fi
+fi
+
+status_json=$(docker exec openbao bao status -format=json 2>/dev/null || true)
+if echo "$status_json" | grep -q '"sealed": true'; then
+	info "Unsealing openbao..."
+	UNSEAL_KEY=$(grep -A1 '"unseal_keys_b64":' "$CONFIG_DIR/bao-init.json" | tail -n1 | cut -d'"' -f2)
+	docker exec openbao bao operator unseal "$UNSEAL_KEY" >/dev/null
+fi
+
+export VAULT_TOKEN=$(grep '"root_token":' "$CONFIG_DIR/bao-init.json" | cut -d'"' -f4)
+env_upsert VAULT_TOKEN "$VAULT_TOKEN"
+
+if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets list -format=json 2>/dev/null | grep -q '"secret/":'; then
+    info "Enabling kv-v2 secrets engine at secret/..."
+    docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets enable -path=secret kv-v2 >/dev/null
+fi
+
 # ── 4. Start SSO Manager, wait for health ─────────────────────────────────────
 # SSO_GIT_COMMIT: sso-manager-node is a git submodule here, so its .git is a
 # pointer file (not a real repo) -- the image can't resolve its own commit
@@ -669,6 +725,13 @@ for i in $(seq 1 60); do
 	if (( i == 60 )); then die "sso-manager did not become healthy in 60s. Check: ${COMPOSE[*]} logs sso-manager"; fi
 	sleep 2
 done
+
+if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao kv get secret/sso-manager/conf >/dev/null 2>&1; then
+    info "Seeding sso-manager/conf into Openbao..."
+    docker exec sso-manager node -e "console.log(JSON.stringify(require('/config/sso-secrets.js')))" > "$CONFIG_DIR/seed-conf.json"
+    cat "$CONFIG_DIR/seed-conf.json" | docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao kv put secret/sso-manager/conf -
+    rm -f "$CONFIG_DIR/seed-conf.json"
+fi
 
 # Read the summary values (hosts, admin, base DN) back from ./config via the
 # running container's node — works whether ./config was generated or pre-existing.
