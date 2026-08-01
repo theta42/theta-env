@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.27.1] - 2026-08-01
+
+- Added automated integration tests for the environment (`test-integration.sh`).
+- Updated `sso-manager-node` to v1.15.2 (Directory UI tab styling fixes and Vault documentation).
+
 ## [v1.27.0] - 2026-08-01
 
 - Updated `sso-manager-node` to v1.15.0 (UI/UX improvements and structured conf page).
