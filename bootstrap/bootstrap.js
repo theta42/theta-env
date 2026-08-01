@@ -464,9 +464,9 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		subType: 'openresty',
 	});
 
-	// Optional SSH jump host service.
+	// SSH jump host service (core component — always registered).
 	let jumpSvc = null;
-	if (/^(1|true|yes)$/i.test(process.env.CFG_JUMP_HOST_ENABLED || '')) {
+	{
 		const jumpHost = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
 		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', host.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
@@ -523,16 +523,16 @@ function writeProxyCreds(id, secret) {
 	}
 }
 
-// ── 6. Optional: provision the SSH jump host ────────────────────────────────
-// When CFG_JUMP_HOST_ENABLED=true, the jump host needs: a directory API token
-// (to resolve which hosts a user may reach), an LDAP bind account that can
-// WRITE the sshPublicKey attribute (it injects its own key on first use), and
-// a config file it reads. We write /config/jump-secrets.js deriving LDAP/site
-// from sso-secrets.js + a freshly minted API token. The bundled jump host
-// binds as cn=admin (already able to write sshPublicKey) — hardened bare-metal
-// deployments should use a scoped account + attribute ACL instead (see the
-// jump-host README). Idempotent: skips if the file already has a real token.
-const JUMP_ENABLED = /^(1|true|yes)$/i.test(process.env.CFG_JUMP_HOST_ENABLED || '');
+// ── 6. Provision the SSH jump host ─────────────────────────────────────────
+// The jump host is a core component (always provisioned). It needs: a directory
+// API token (to resolve which hosts a user may reach), an LDAP bind account
+// that can WRITE the sshPublicKey attribute (it injects its own key on first
+// use), and a config file it reads. We write /config/jump-secrets.js deriving
+// LDAP/site from sso-secrets.js + a freshly minted API token. The bundled jump
+// host binds as cn=admin (already able to write sshPublicKey) — hardened
+// bare-metal deployments should use a scoped account + attribute ACL instead
+// (see the jump-host README). Idempotent: skips if the file already has a real
+// token.
 const JUMP_HOST = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
 const JUMP_SECRETS = '/config/jump-secrets.js';
 const JUMP_TOKEN_NAME = 'theta-jump-host';
@@ -716,23 +716,22 @@ async function provisionJumpHost(token) {
 		// generated OAuth creds). Warn-only.
 		await baoPut('proxy/conf', freshRequire('/config/proxy-secrets.js'));
 
-		// Provision the jump host (mint token + write config) when enabled.
-		// Warn-only — never fail the whole bring-up over the optional service.
+		// Provision the jump host (mint token + write config). Warn-only — never
+		// fail the whole bring-up over it, but it's a core component so always
+		// attempted (no longer gated by CFG_JUMP_HOST_ENABLED).
 		let jumpClientId = null;
-		if (JUMP_ENABLED) {
-			try {
-				jumpClientId = await provisionJumpHost(token);
-				out('JUMP_HOST_CONFIGURED', '1');
-				// Mirror jump-secrets.js (just written by provisionJumpHost)
-				// into OpenBao so the jump host loads it from there at boot via
-				// @simpleworkjs/bao-conf. setup.sh's seed may have put a
-				// placeholder/stale version here; this replaces it with the
-				// complete file (LDAP bind, minted API token, OAuth client).
-				// Warn-only.
-				await baoPut('jump-host/conf', freshRequire(JUMP_SECRETS));
-			} catch (e) {
-				log(`WARNING: jump host provisioning failed (${e.message || e}) — continuing`);
-			}
+		try {
+			jumpClientId = await provisionJumpHost(token);
+			out('JUMP_HOST_CONFIGURED', '1');
+			// Mirror jump-secrets.js (just written by provisionJumpHost) into
+			// OpenBao so the jump host loads it from there at boot via
+			// @simpleworkjs/bao-conf. setup.sh's seed may have put a
+			// placeholder/stale version here; this replaces it with the
+			// complete file (LDAP bind, minted API token, OAuth client).
+			// Warn-only.
+			await baoPut('jump-host/conf', freshRequire(JUMP_SECRETS));
+		} catch (e) {
+			log(`WARNING: jump host provisioning failed (${e.message || e}) — continuing`);
 		}
 
 		// Seed the directory (site/host/services + OAuth client link). Never
