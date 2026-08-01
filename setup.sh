@@ -694,7 +694,8 @@ if echo "$status_json" | grep -q '"sealed": true'; then
 	docker exec openbao bao operator unseal "$UNSEAL_KEY" >/dev/null
 fi
 
-export VAULT_TOKEN=$(grep '"root_token":' "$CONFIG_DIR/bao-init.json" | cut -d'"' -f4)
+export VAULT_TOKEN
+VAULT_TOKEN=$(grep '"root_token":' "$CONFIG_DIR/bao-init.json" | cut -d'"' -f4)
 env_upsert VAULT_TOKEN "$VAULT_TOKEN"
 
 if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets list -format=json 2>/dev/null | grep -q '"secret/":'; then
