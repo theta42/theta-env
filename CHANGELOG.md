@@ -8,6 +8,16 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.27.2] - 2026-08-01
+
+- Updated `proxy` to v1.12.1 (Dependabot security/maintenance bumps).
+
+#### proxy — [v1.12.1](https://github.com/theta42/proxy/releases/tag/v1.12.1)
+
+##### Changed
+- Bumped `body-parser` 2.2.2 → 2.3.0 (Dependabot #175).
+- Bumped `ejs` and `brace-expansion` (Dependabot #179, security maintenance).
+
 ## [v1.27.1] - 2026-08-01
 
 - Added automated integration tests for the environment (`test-integration.sh`).
