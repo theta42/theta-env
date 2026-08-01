@@ -169,18 +169,14 @@ then
 	fi
 fi
 
-# ── Optional jump host: resolve the enable flag early ─────────────────────────
-# CFG_JUMP_HOST_ENABLED gates the optional SSH jump host (a third submodule).
-# Read it from the environment or ./setup.env now (before the submodule loop
-# and the compose steps) so every run knows whether to build/start it. The
-# authoritative CFG_* for secrets are still resolved in ensure_config; this is
-# only the on/off switch + its hostname.
+# ── Jump host hostname (always installed) ─────────────────────────────────────
+# The SSH jump host is a core component — always built + started (no longer
+# gated by CFG_JUMP_HOST_ENABLED). Read its optional hostname override from
+# ./setup.env now (before the submodule loop and the compose steps) so the
+# later steps can use it. The authoritative CFG_* for secrets are still
+# resolved in ensure_config; this is only the hostname override.
 [[ -f ./setup.env ]] && parse_kv_file ./setup.env
-JUMP_ENABLED=0
-case "${CFG_JUMP_HOST_ENABLED:-}" in 1|true|TRUE|yes|YES) JUMP_ENABLED=1 ;; esac
-export CFG_JUMP_HOST_ENABLED CFG_JUMP_HOST
-# When enabled, activate the compose profile so `up`/`ps` include the service.
-if [[ "$JUMP_ENABLED" == "1" ]]; then export COMPOSE_PROFILES="jump-host"; fi
+export CFG_JUMP_HOST
 
 # ── Optional outbound HTTP(S) proxy for docker build + the running containers ─
 # CFG_HTTP_PROXY / CFG_HTTPS_PROXY / CFG_NO_PROXY (from ./setup.env or the
@@ -213,9 +209,8 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 		die "git submodule update --init failed. Run manually: git submodule update --init --recursive"
 	fi
 
-	# jump-host is optional: only track/build it when enabled.
-	SUBMODULES=(sso-manager-node proxy)
-	[[ "$JUMP_ENABLED" == "1" ]] && SUBMODULES+=(jump-host)
+	# jump-host is a core component — always tracked + built.
+	SUBMODULES=(sso-manager-node proxy jump-host)
 	info "Updating submodules to their latest release tag (${SUBMODULES[*]})..."
 	for sm in "${SUBMODULES[@]}"; do
 		[[ -d "$sm" ]] || continue
@@ -730,7 +725,15 @@ ensure_policy() {
 env_get() {
 	local key="$1" file=./.env
 	[[ -f "$file" ]] || return 0
-	grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2-
+	# `|| true` is load-bearing: under `set -euo pipefail`, a no-match `grep`
+	# exits 1 and (pipefail) makes the whole pipeline return 1. Callers do
+	# `existing="$(env_get ...)"` as a bare assignment — a non-zero return there
+	# trips `set -e` and silently kills the whole script (this is exactly what
+	# aborted a fresh install right after "Minting per-app OpenBao tokens": the
+	# root VAULT_TOKEN env_upsert had already created .env, but the app-token
+	# keys were absent, so the first env_get returned 1). "Key absent" is the
+	# normal path here, so always return 0 with empty output.
+	grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || true
 }
 
 # Mint an orphan, renewable token for `policy` and persist it to .env as `key`,
@@ -904,7 +907,6 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 	-e STACK_HOST_MAC="$STACK_HOST_MAC" \
 	-e STACK_HOST_OS="$STACK_HOST_OS" \
 	-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
-	-e CFG_JUMP_HOST_ENABLED="${CFG_JUMP_HOST_ENABLED:-}" \
 	-e CFG_JUMP_HOST="${CFG_JUMP_HOST:-}" \
 	-e VAULT_ADDR=http://openbao:8200 \
 	-e VAULT_TOKEN="$VAULT_TOKEN" \
@@ -984,35 +986,34 @@ NODEEOF
 ) || die "Registering hosts with the proxy failed:\n${HOSTS_OUT}"
 echo "$HOSTS_OUT" | sed 's/^/[setup] /'
 
-# ── 7b. Optional: build + start the SSH jump host ─────────────────────────────
-# Enabled by CFG_JUMP_HOST_ENABLED. The bootstrap (step 5) already wrote
-# ./config/jump-secrets.js (minted API token + LDAP admin bind). Build/start the
-# service (compose profile 'jump-host' is active), wait for its web /health, and
-# register its web UI hostname as a proxy Host so https://<JUMP_HOST> routes.
-if [[ "$JUMP_ENABLED" == "1" ]]; then
-	JUMP_HOST="${CFG_JUMP_HOST:-jump.${SSO_HOST#sso.}}"
-	JUMP_GIT_COMMIT="$(git -C jump-host rev-parse --short HEAD 2>/dev/null || echo unknown)"
-	export JUMP_GIT_COMMIT
-	env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
-	# Seed jump-host/conf from the file bootstrap just wrote (it mints the API
-	# token + OAuth client into /config/jump-secrets.js at step 5). bootstrap
-	# also writes this to OpenBao directly, so this is a fallback for when
-	# bootstrap's jump provisioning warned-but-continued.
-	seed_app_conf jump-host/conf /config/jump-secrets.js
-	info "Building + starting jump-host (optional; enabled via CFG_JUMP_HOST_ENABLED)..."
-	"${COMPOSE[@]}" up -d --build jump-host
+# ── 7b. Build + start the SSH jump host ──────────────────────────────────────
+# The jump host is a core component (no longer optional). The bootstrap (step 5)
+# already wrote ./config/jump-secrets.js (minted API token + LDAP admin bind) and
+# mirrored it into OpenBao. Build/start the service, wait for its web /health,
+# and register its web UI hostname as a proxy Host so https://<JUMP_HOST> routes.
+JUMP_HOST="${CFG_JUMP_HOST:-jump.${SSO_HOST#sso.}}"
+JUMP_GIT_COMMIT="$(git -C jump-host rev-parse --short HEAD 2>/dev/null || echo unknown)"
+export JUMP_GIT_COMMIT
+env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
+# Seed jump-host/conf from the file bootstrap just wrote (it mints the API
+# token + OAuth client into /config/jump-secrets.js at step 5). bootstrap also
+# writes this to OpenBao directly, so this is a fallback for when bootstrap's
+# jump provisioning warned-but-continued.
+seed_app_conf jump-host/conf /config/jump-secrets.js
+info "Building + starting jump-host..."
+"${COMPOSE[@]}" up -d --build jump-host
 
-	info "Waiting for jump-host to be healthy..."
-	for i in $(seq 1 60); do
-		if docker exec jump-host node -e "require('http').get('http://localhost:3002/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" >/dev/null 2>&1; then
-			info "jump-host is healthy."; break
-		fi
-		if (( i == 60 )); then warn "jump-host did not become healthy in 120s. Check: ${COMPOSE[*]} logs jump-host"; break; fi
-		sleep 2
-	done
+info "Waiting for jump-host to be healthy..."
+for i in $(seq 1 60); do
+	if docker exec jump-host node -e "require('http').get('http://localhost:3002/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" >/dev/null 2>&1; then
+		info "jump-host is healthy."; break
+	fi
+	if (( i == 60 )); then warn "jump-host did not become healthy in 120s. Check: ${COMPOSE[*]} logs jump-host"; break; fi
+	sleep 2
+done
 
-	info "Registering ${JUMP_HOST} (jump-host web UI) with the proxy..."
-	JUMP_HOSTS_OUT=$("${COMPOSE[@]}" exec -T proxy node <<NODEEOF || true
+info "Registering ${JUMP_HOST} (jump-host web UI) with the proxy..."
+JUMP_HOSTS_OUT=$("${COMPOSE[@]}" exec -T proxy node <<NODEEOF || true
 const {Host} = require('/app/models').models;
 (async () => {
 	try {
@@ -1027,8 +1028,7 @@ const {Host} = require('/app/models').models;
 })();
 NODEEOF
 )
-	echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
-fi
+echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
 
 # ── 8. Summary ───────────────────────────────────────────────────────────────
 echo
@@ -1038,11 +1038,9 @@ echo "  SSO Manager UI:    https://${SSO_HOST}   (fronted by the proxy under TLS
 echo "                      first-run fallback: http://127.0.0.1:${SSO_PORT:-3001}"
 echo "  Proxy mgmt UI:      https://${PROXY_HOST}"
 echo "                      first-run fallback: http://127.0.0.1:${MGMT_PORT:-3000}"
-if [[ "$JUMP_ENABLED" == "1" ]]; then
 echo "  Jump host (SSH):    ssh -p ${JUMP_SSH_PORT:-2222} <uid>@${JUMP_HOST:-jump.${SSO_HOST#sso.}}   (TUI picker)"
 echo "                      ssh -p ${JUMP_SSH_PORT:-2222} <uid>_-_<host>@${JUMP_HOST:-jump.${SSO_HOST#sso.}}"
 echo "  Jump host (web):    https://${JUMP_HOST:-jump.${SSO_HOST#sso.}}   (audit + metrics)"
-fi
 echo
 echo "  First admin login credentials are in ./config/sso-secrets.js:"
 echo "    user: ${ADMIN_UID}"

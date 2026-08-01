@@ -8,6 +8,41 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.29.0] - 2026-08-01
+
+Two fixes for a fresh `./setup.sh` install, plus the SSH jump host promoted
+from an opt-in component to a core part of the stack.
+
+### Fixed (theta-env orchestration)
+- **`setup.sh`** — fresh installs aborted silently right after `Minting
+  per-app OpenBao tokens`. The `env_get` helper's `grep | cut` pipeline returns
+  non-zero under `set -euo pipefail` when `.env` exists (it's created earlier
+  by the root-`VAULT_TOKEN` `env_upsert`) but a given app-token key is absent —
+  the normal first-run state. The unguarded `existing="$(env_get ...)"` then
+  tripped `set -e` and killed the script before any token was minted. `env_get`
+  now always returns 0 (`|| true`), so "key absent" resolves to empty and the
+  run continues through token minting, the SSO/proxy bring-up, and the jump
+  host. Reproduced + verified the fix under the exact fresh-install condition.
+- **`setup.sh`** — `JUMP_VAULT_TOKEN` is now always minted (jump host is core;
+  the mint was already unconditional, this just documents it).
+
+### Changed (theta-env orchestration)
+- **jump host is no longer optional** — it is built + started on every run,
+  with no `CFG_JUMP_HOST_ENABLED` flag.
+  - `docker-compose.yml`: removed `profiles: ["jump-host"]` from the
+    `jump-host` service so `docker compose up` includes it unconditionally.
+    The test-only `ldap-test-host` downstream fixture keeps an opt-in profile,
+    renamed `jump-host` → `ldap-test` (`docker compose --profile ldap-test up`).
+  - `setup.sh`: `SUBMODULES` always includes `jump-host`; the build/start +
+    host-register + summary lines for the jump host are no longer wrapped in a
+    `JUMP_ENABLED` guard; the `COMPOSE_PROFILES` export is gone.
+  - `bootstrap/bootstrap.js`: jump-host provisioning (mint API token + write
+    `jump-secrets.js` + mirror into OpenBao) and its directory service record
+    now run unconditionally — no `CFG_JUMP_HOST_ENABLED` gate.
+  - `setup.env.example` / `docs/index.md` / `docs/quickstart.md`: dropped the
+    "optional / enable with `CFG_JUMP_HOST_ENABLED=true`" wording; the
+    `CFG_JUMP_HOST` hostname override + `JUMP_SSH_PORT` remain.
+
 ## [v1.28.0] - 2026-08-01
 
 OpenBao becomes the central secrets store for the whole stack. Every app now

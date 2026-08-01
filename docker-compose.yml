@@ -170,12 +170,10 @@ services:
       retries: 3
       start_period: 30s
 
-  # Optional SSH jump host. Only started when the `jump-host` compose profile
-  # is active — setup.sh exports COMPOSE_PROFILES=jump-host when
-  # CFG_JUMP_HOST_ENABLED=true. Authenticates users against the SSO's OpenLDAP,
-  # resolves reachable hosts from the directory API, and bridges SSH through.
+  # SSH jump host — a core component, always built + started alongside the
+  # SSO and proxy. Authenticates users against the SSO's OpenLDAP, resolves
+  # reachable hosts from the directory API, and bridges SSH through.
   jump-host:
-    profiles: ["jump-host"]
     build:
       context: ./jump-host
       dockerfile: Dockerfile
@@ -220,11 +218,11 @@ services:
   # a container with a manually-dropped public key in authorized_keys never
   # exercises the LDAP-key-serving path a real production host does. Built
   # from the theta42/ldap-client submodule -- see ./config/ldap-test-host.vars
-  # for setup notes. Same jump-host profile, so
-  # `docker compose --profile jump-host up` brings up jump-host and a host it
-  # can actually reach together.
+  # for setup notes. Opt-in test fixture: bring it up explicitly with
+  # `docker compose --profile ldap-test up` (jump-host itself now starts
+  # unconditionally, so this only adds a downstream host for it to reach).
   ldap-test-host:
-    profiles: ["jump-host"]
+    profiles: ["ldap-test"]
     build:
       context: ./ldap-client
       dockerfile: Dockerfile
