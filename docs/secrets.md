@@ -1,12 +1,12 @@
 ---
 layout: default
 title: Secrets (OpenBao)
-description: theta-env's central secrets architecture — OpenBao as the single store for all app, per-user, and external-app secrets, with scoped tokens and policies.
+description: theta-suite's central secrets architecture — OpenBao as the single store for all app, per-user, and external-app secrets, with scoped tokens and policies.
 ---
 
 # Secrets — OpenBao as the central store
 
-theta-env keeps **every secret in one place: [OpenBao](https://openbao.org/)**
+theta-suite keeps **every secret in one place: [OpenBao](https://openbao.org/)**
 (a Vault-community fork), running on the `theta-net` docker network at
 `http://openbao:8200`. The three apps (SSO Manager, proxy, jump host) load
 their boot secrets from it; end users get personal per-user secret storage

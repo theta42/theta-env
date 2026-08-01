@@ -1,9 +1,10 @@
-# theta-env
+# theta-suite
 
 The whole theta42 identity + access stack in one repo, brought up with a single
 command — for home labs and small businesses.
 
-It wires together two projects that already work on their own:
+It composes four applications around a shared [OpenBao](https://openbao.org/)
+secrets store, brought up with one command:
 
 - **[SSO Manager](https://github.com/theta42/sso-manager-node)** — an OIDC
   provider with a built-in LDAP directory (OpenLDAP) and a web UI for managing
@@ -11,12 +12,15 @@ It wires together two projects that already work on their own:
 - **[theta42/proxy](https://github.com/theta42/proxy)** — an OIDC-protected
   reverse proxy (OpenResty) that puts any of your apps behind SSO login and can
   look users up directly in LDAP.
+- **[Jump Host](https://github.com/theta42/jump-host)** — directory-driven SSH
+  access to your machines through one public entry point.
+- **[ldap-client](https://github.com/theta42/ldap-client)** — enrolls Linux
+  hosts into the directory for PAM/SSSD login, sudo, and SSH keys.
 
-Each project still runs **standalone** (`docker compose up` in its own folder);
-this repo just composes them and automates the first-run glue so they find each
-other.
+All four load their secrets from OpenBao at boot; `setup.sh` automates the
+first-run glue so they find each other and the secrets store.
 
-**Documentation:** [https://theta42.github.io/theta-env/](https://theta42.github.io/theta-env/)
+**Documentation:** [https://theta42.github.io/theta-suite/](https://theta42.github.io/theta-suite/)
 
 ## Screenshots
 
@@ -125,9 +129,10 @@ see browser warnings.)
 
 Optional extra ports (only if you need them):
 - **4443** — alternate HTTPS listener (e.g. if 443 is taken by something else).
-- **636** (LDAPS) — only if a legacy app on another machine binds to LDAP
-  directly over the network. The proxy itself reaches LDAP over the internal
-  Docker network, so you do **not** need to expose 636 for the stack to work.
+- **636** (LDAPS) — for direct-LDAP clients on other machines (Linux hosts
+  via PAM/SSSD, LDAP-native apps). The proxy itself reaches LDAP over the
+  internal Docker network, so you do **not** need to expose 636 for the stack
+  to work.
   **Do not forward 636 to the public internet.** If you need LAN clients to bind
   LDAP, set `CFG_LDAPS_HOST=ldap.internal.example.com` (or `sso-manager` for
   same-host Docker clients) in `setup.env` and use an internal DNS record / cert
@@ -143,8 +148,8 @@ standalone (`docker-compose`) both work.
 ## Quickstart
 
 ```bash
-git clone --recursive https://github.com/theta42/theta-env.git
-cd theta-env
+git clone --recursive https://github.com/theta42/theta-suite.git
+cd theta-suite
 cp setup.env.example setup.env     # then edit setup.env: set CFG_DOMAIN to your domain
 ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 ```
@@ -233,9 +238,10 @@ override on the command line: `SSO_BIND=127.0.0.1 ./setup.sh`. See
 - **Proxy mgmt UI**: `https://<PROXY_HOST>` — add the Host records you want to
   protect with OIDC. (First-run fallback: `http://<host>:3000`, reachable on the
   LAN by default.)
-- **Direct LDAP for legacy apps**: bind to `ldaps://<host>:636` as
-  `cn=admin,<base>` (admin) or `cn=ldapclient,ou=people,<base>` (read-only
-  service account the bootstrap created). Use LDAPS, not plain LDAP.
+- **Direct LDAP for LDAP-native clients and Linux hosts**: bind to
+  `ldaps://<host>:636` as `cn=admin,<base>` (admin) or
+  `cn=ldapclient,ou=people,<base>` (read-only service account the bootstrap
+  created). Use LDAPS, not plain LDAP.
 
 ### API tokens (personal access tokens)
 
@@ -346,7 +352,7 @@ docker compose cp proxy:/data/dump.rdb proxy.rdb
 # Secrets — ./config/ (the seed/fallback; OpenBao is authoritative)
 cp -a ./config config-backup && chmod 700 config-backup
 # OpenBao (the authoritative secret store — back up its data volume)
-docker run --rm -v theta-env_openbao-data:/data -v "$PWD":/backup alpine \
+docker run --rm -v theta-suite_openbao-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/openbao-data.tgz -C /data .
 ```
 
@@ -398,9 +404,15 @@ Redis and are preserved by the volume.
 
 ---
 
-## Running each project standalone
+## Running a component individually
 
-The two submodules work on their own — this repo just composes them:
+> The integrated stack (`./setup.sh`) is the supported path. The per-project
+> commands below are for the advanced case of running one component on its own
+> (separate host, no orchestrator) — you then manage secrets from the
+> `config/*-secrets.js` file only (no shared OpenBao) and do the OIDC/LDAP wiring
+> by hand. See [docs/standalone.md](docs/standalone.md).
+
+Each submodule builds and runs on its own:
 
 - **SSO Manager alone**:
   ```bash
@@ -486,7 +498,7 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 ## Repo layout
 
 ```
-theta-env/
+theta-suite/
 ├── setup.env.example   # first-run config template — cp to setup.env, set CFG_DOMAIN
 ├── config.example/      # committed annotated config templates (copy to ./config/)
 ├── docker-compose.yml   # sso-manager + proxy on one bridge net
@@ -507,7 +519,7 @@ tagged release of each app, not whatever's most recently merged upstream. To
 lock to the pinned commits (offline rebuild, or a deliberate pin), run
 `SKIP_SUBMODULE_UPDATE=1 ./setup.sh`.
 
-See [CHANGELOG.md](CHANGELOG.md) for what changed in each theta-env release
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each theta-suite release
 (and each submodule's own `CHANGELOG.md` —
 [proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md)

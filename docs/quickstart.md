@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Quickstart
-description: Step-by-step first run for theta-env — prerequisites, setup.env, and bringing up the stack with ./setup.sh.
+description: Step-by-step first run for theta-suite — prerequisites, setup.env, and bringing up the stack with ./setup.sh.
 ---
 
 # Quickstart Guide
@@ -26,8 +26,8 @@ description: Step-by-step first run for theta-env — prerequisites, setup.env, 
 ## 1. Clone
 
 ```bash
-git clone --recursive https://github.com/theta42/theta-env.git
-cd theta-env
+git clone --recursive https://github.com/theta42/theta-suite.git
+cd theta-suite
 ```
 
 `--recursive` fetches the two submodules (`sso-manager-node`, `proxy`) in one
@@ -143,9 +143,10 @@ already holds its creds).
 
 ---
 
-## Direct LDAP for legacy apps
+## Direct LDAP for LDAP-native clients and Linux hosts
 
-Legacy apps bind LDAP directly over LDAPS:
+LDAP-native apps and Linux hosts (PAM/SSSD, sudo, SSH keys) bind LDAP directly
+over LDAPS:
 
 ```bash
 ldapsearch -x -H ldaps://<host>:636 \
@@ -164,7 +165,7 @@ or the admin DN. Use LDAPS (636), not plain LDAP.
 before each rebuild (keeps the last `BACKUP_KEEP`, default 5). For manual
 backups and the full restore runbook (full / Redis-only / LDAP-only, with the
 AOF-vs-RDB note), see the *Backups and restore* section of the
-[README](https://github.com/theta42/theta-env#backups-and-restore). Quick LDAP
+[README](https://github.com/theta42/theta-suite#backups-and-restore). Quick LDAP
 backup:
 
 ```bash

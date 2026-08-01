@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# theta-env setup — one-command bring-up of the unified SSO Manager + Proxy stack.
+# theta-suite setup — one-command bring-up of the unified SSO Manager + Proxy stack.
 #
-#   git clone --recursive <theta-env> && cd theta-env
+#   git clone --recursive <theta-suite> && cd theta-suite
 #   cp setup.env.example setup.env   # set CFG_DOMAIN to your domain (once)
 #   ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
 #   ./setup.sh            # later runs: rebuilds + bootstraps + starts (config left untouched)
@@ -19,7 +19,7 @@
 # no manual `git pull` needed first.
 #
 # What it does, in order:
-#   0. Pull theta-env's own latest commit (fast-forward only) and, if it
+#   0. Pull theta-suite's own latest commit (fast-forward only) and, if it
 #      moved, re-exec so the rest of this run uses the new script. Never
 #      blocks the run — skips silently with no upstream, warns and continues
 #      on any other pull failure (offline, local changes). Skip with
@@ -141,7 +141,7 @@ parse_kv_file() {
 	done < "$file"
 }
 
-# ── 0. Self-update: pull theta-env itself, then restart with the new version ──
+# ── 0. Self-update: pull theta-suite itself, then restart with the new version ──
 # Step 1 below only refreshes the proxy/sso-manager-node submodules — it never
 # updates setup.sh or this repo's own files. Pull the current branch's
 # upstream (fast-forward only) before anything else, and if it moved, re-exec
@@ -151,7 +151,7 @@ parse_kv_file() {
 # warns (but continues on the current checkout) if the pull fails for any
 # other reason (offline, local changes that prevent a fast-forward). Skip
 # entirely with SKIP_SELF_UPDATE=1.
-if [[ "${SKIP_SELF_UPDATE:-0}" != "1" && "${THETA_ENV_REEXECED:-0}" != "1" ]] \
+if [[ "${SKIP_SELF_UPDATE:-0}" != "1" && "${THETA_SUITE_REEXECED:-0}" != "1" ]] \
 	&& command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
 	&& git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1
 then
@@ -161,11 +161,11 @@ then
 		AFTER_REV="$(git rev-parse HEAD)"
 		if [[ "$BEFORE_REV" != "$AFTER_REV" ]]; then
 			AFTER_VER="$(git describe --tags "$AFTER_REV" 2>/dev/null || echo "${AFTER_REV:0:12}")"
-			info "Updated theta-env (${BEFORE_VER} -> ${AFTER_VER}) — restarting setup.sh with the new version..."
-			THETA_ENV_REEXECED=1 exec "$0" "$@"
+			info "Updated theta-suite (${BEFORE_VER} -> ${AFTER_VER}) — restarting setup.sh with the new version..."
+			THETA_SUITE_REEXECED=1 exec "$0" "$@"
 		fi
 	else
-		warn "Could not fast-forward theta-env to the latest upstream (offline, or local changes) — continuing with the current checkout."
+		warn "Could not fast-forward theta-suite to the latest upstream (offline, or local changes) — continuing with the current checkout."
 	fi
 fi
 
@@ -565,7 +565,7 @@ backup_before_rebuild() {
 	# bind-mount was added), then fall back to reading it inside the container.
 	# Use `docker exec <name>` (not `docker-compose exec`) so the snapshot works
 	# no matter which compose project brought the container up — the unified
-	# theta-env stack (project "theta-env") and the standalone submodule stack
+	# theta-suite stack (project "theta-suite") and the standalone submodule stack
 	# (project "sso-manager-node") both name it "sso-manager". `docker-compose
 	# exec` from the superproject otherwise exits 1 silently (wrong project) and
 	# the snapshot silently no-ops.

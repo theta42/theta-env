@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== Starting theta-env Integration Tests ==="
+echo "=== Starting theta-suite Integration Tests ==="
 
 echo "=> Cleaning up any existing containers and volumes..."
 docker-compose down -v
@@ -11,7 +11,7 @@ echo "=> Running setup.sh to initialize environment..."
 # setup.sh uses dialog, which requires a terminal, but it falls back to defaults if not interactive?
 # Actually setup.sh has a dialog UI. Let's just run it or provide a seeded config.
 # If setup.sh is strictly interactive, we might need to bypass it or provide answers.
-# Let's try running docker-compose up directly if setup.sh is too interactive, but the user explicitly said "Make sure setup.sh like your change, then do a full release. Make sure each repo has a current change log, is pushed and and merged." and "Automated testing in theta-env to test integration between all the include projects".
+# Let's try running docker-compose up directly if setup.sh is too interactive, but the user explicitly said "Make sure setup.sh like your change, then do a full release. Make sure each repo has a current change log, is pushed and and merged." and "Automated testing in theta-suite to test integration between all the include projects".
 
 # Wait, setup.sh has no silent mode out of the box unless we provide answers.
 echo "=> Initializing OpenBao manually for tests (simulating setup.sh)"

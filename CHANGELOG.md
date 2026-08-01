@@ -2,18 +2,65 @@
 
 All notable changes to this project are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
-correspond to git tags (`vX.Y.Z`). Entries here cover theta-env's own
+correspond to git tags (`vX.Y.Z`). Entries here cover theta-suite's own
 orchestration code; see each submodule's own `CHANGELOG.md`
 ([proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
+
+## [v1.30.0] - 2026-08-01
+
+The project is renamed **theta-env → theta-suite** — it has grown from a
+docker-compose wiring two projects into an integrated suite of four
+applications around a shared OpenBao secrets store, and the name should reflect
+that. The GitHub repository is renamed `theta42/theta-env` →
+`theta42/theta-suite` (old URLs redirect), and the docs site moves to
+`https://theta42.github.io/theta-suite/`.
+
+### Changed (theta-suite orchestration)
+- **Renamed theta-env → theta-suite** across the superproject: `docs/_config.yml`
+  (`title` + `baseurl: /theta-suite` + repo URLs), `README.md`, `setup.sh`
+  (incl. the `THETA_SUITE_REEXECED` self-update sentinel), `docker-compose.yml`,
+  `bootstrap/bootstrap.js`, `.github/workflows/lint.yml`, `config.example/*`,
+  `docs/robots.txt`, all docs pages, and this changelog.
+- **Compose project name note:** docker compose derives the project name from
+  the clone directory, so named volumes follow it (`<project>_openbao-data`).
+  A fresh `git clone` of `theta-suite` uses the `theta-suite` project name; an
+  existing deployment that keeps its `theta-env` directory keeps its
+  `theta-env_*` volumes — no data migration is required, just don't mix the two.
+- **Docs site baseurl** is now `/theta-suite`, matching the renamed repo's
+  GitHub Pages URL.
+
+### Docs
+- **`architecture.md` rewritten.** Replaced the outdated "The two containers"
+  / "The three repos" framing with the actual topology — four always-on
+  services (`openbao`, `sso-manager`, `proxy`, `jump-host`) plus the
+  `ldap-client` host-enrollment tool — a real diagram, a full **Secrets
+  (OpenBao)** section (central store, scoped per-app policies/tokens, the
+  `@simpleworkjs/bao-conf` boot overlay, per-user KV, external-app minting),
+  and an OpenBao-aware "how config reaches the apps". Removed the
+  LDAP-"legacy apps" wording (direct LDAP binds are first-class: Linux hosts
+  PAM/SSSD, sudo, SSH keys).
+- **`index.md`** — integrated-suite framing; added **Central secrets (OpenBao)**
+  and **ldap-client** to "What you get" and "Related projects".
+- **`standalone.md` + `README.md`** — standalone is now framed as an advanced
+  opt-in; the integrated `./setup.sh` stack is the supported path.
+
+### Submodule bump
+- **sso-manager-node → v1.16.1** — fixes the **401 on `/conf` and `/vault`** for
+  a logged-in admin. Both view routes 401'd because this app's auth-token is a
+  header set by client JS (localStorage), not a cookie, so `req.user` is
+  undefined on a browser navigation; the routes now render the shell and gate
+  client-side (`app.auth.forceLogin`), with `/api/conf` + `/api/vault` still
+  enforcing auth + OpenBao scope server-side. See the
+  [sso v1.16.1 release](https://github.com/theta42/sso-manager-node/releases/tag/v1.16.1).
 
 ## [v1.29.0] - 2026-08-01
 
 Two fixes for a fresh `./setup.sh` install, plus the SSH jump host promoted
 from an opt-in component to a core part of the stack.
 
-### Fixed (theta-env orchestration)
+### Fixed (theta-suite orchestration)
 - **`setup.sh`** — fresh installs aborted silently right after `Minting
   per-app OpenBao tokens`. The `env_get` helper's `grep | cut` pipeline returns
   non-zero under `set -euo pipefail` when `.env` exists (it's created earlier
@@ -26,7 +73,7 @@ from an opt-in component to a core part of the stack.
 - **`setup.sh`** — `JUMP_VAULT_TOKEN` is now always minted (jump host is core;
   the mint was already unconditional, this just documents it).
 
-### Changed (theta-env orchestration)
+### Changed (theta-suite orchestration)
 - **jump host is no longer optional** — it is built + started on every run,
   with no `CFG_JUMP_HOST_ENABLED` flag.
   - `docker-compose.yml`: removed `profiles: ["jump-host"]` from the
@@ -53,7 +100,7 @@ apps get scoped `secret/apps/<app>/*` access. `setup.sh` mints the policies
 and scoped tokens, `bootstrap.js` writes generated creds into OpenBao, and a
 new `docs/secrets.md` documents the architecture.
 
-### Changed (theta-env orchestration)
+### Changed (theta-suite orchestration)
 - **`setup.sh`** — after the KV-v2 enable, a new idempotent block writes four
   OpenBao policies (`sso-broker`, `sso-admin`, `proxy`, `jump-host`) via
   heredocs, a `sso-broker` token role (`allowed_policies_glob` `user-*`/`app-*`,
@@ -146,7 +193,7 @@ and exposes a fixed, role-scoped personal-secrets UI.
   proxy exit at boot in any deployment without an OpenBao sidecar (standalone
   Docker, bare metal). 1.0.1 makes `init()` fail-soft on a missing token (warn
   + continue from `CONF_SECRETS`), matching the documented contract. The
-  theta-env stack is unaffected (it always sets a scoped `VAULT_TOKEN`).
+  theta-suite stack is unaffected (it always sets a scoped `VAULT_TOKEN`).
 
 ##### v1.13.0 — Changed
 - **Secrets now load from OpenBao at boot** via
@@ -171,7 +218,7 @@ and exposes a fixed, role-scoped personal-secrets UI.
   jump host exit at boot in any deployment without an OpenBao sidecar
   (standalone Docker, bare metal). 1.0.1 makes `init()` fail-soft on a missing
   token (warn + continue from `CONF_SECRETS`), matching the documented
-  contract. The theta-env stack is unaffected (it always sets a scoped
+  contract. The theta-suite stack is unaffected (it always sets a scoped
   `VAULT_TOKEN`).
 
 ##### v1.14.0 — Changed
@@ -542,7 +589,7 @@ No `setup.sh` or compose change.
 ## [1.10.0] - 2026-07-27
 
 ### Fixed
-- **`bootstrap/bootstrap.js`'s jump-secrets.js template now points jump-host at `ldaps://sso-manager:636`**, not `ldap://sso-manager:389`. The plain-port URL combined with jump-host's `tlsOptions` made `ldapts` attempt implicit TLS against a port serving plaintext LDAP — slapd dropped every connection before any LDAP message parsed, so SSH password login failed for every account, with any password, indistinguishable from a wrong credential. Root-caused by standing up a local jump-host, editing its config, and calling `getUser`/`checkPassword` directly inside the container. **Existing deployments must edit `./config/jump-secrets.js` themselves** (this template only affects fresh bootstraps) — see theta42/theta-env#99. Companion defensive fix: [simpleworkjs/ldap v1.0.2](https://github.com/simpleworkjs/ldap/releases/tag/v1.0.2) now rejects this `ldap://` + `tlsOptions` combination outright.
+- **`bootstrap/bootstrap.js`'s jump-secrets.js template now points jump-host at `ldaps://sso-manager:636`**, not `ldap://sso-manager:389`. The plain-port URL combined with jump-host's `tlsOptions` made `ldapts` attempt implicit TLS against a port serving plaintext LDAP — slapd dropped every connection before any LDAP message parsed, so SSH password login failed for every account, with any password, indistinguishable from a wrong credential. Root-caused by standing up a local jump-host, editing its config, and calling `getUser`/`checkPassword` directly inside the container. **Existing deployments must edit `./config/jump-secrets.js` themselves** (this template only affects fresh bootstraps) — see theta42/theta-suite#99. Companion defensive fix: [simpleworkjs/ldap v1.0.2](https://github.com/simpleworkjs/ldap/releases/tag/v1.0.2) now rejects this `ldap://` + `tlsOptions` combination outright.
 
 ### Bumped
 - jump-host -> [v1.7.0](https://github.com/theta42/jump-host/releases/tag/v1.7.0) — adds self-service API tokens (create/list/rotate/revoke from its dashboard); jump-host previously had none.
@@ -629,14 +676,14 @@ Jump-host gains **standalone mode**: it can now run with no LDAP directory and
 no SSO Manager at all, storing users and hosts itself via
 `@simpleworkjs/orm` (Sequelize; SQLite by default, any Sequelize-supported
 dialect). This is an app-internal capability, opt-in via
-`standalone.enabled` in jump-host's own config — the bundled theta-env stack
+`standalone.enabled` in jump-host's own config — the bundled theta-suite stack
 is unaffected and continues to wire jump-host to the shared LDAP directory
 and SSO Manager as before. Two bugs were also fixed in jump-host's SSH
 server: an ephemeral listen port (`0`) was silently overridden back to the
 default, and session listeners could miss a client's immediate `exec`/`shell`
 request.
 
-No `setup.sh`, compose, or config change on the theta-env side.
+No `setup.sh`, compose, or config change on the theta-suite side.
 
 ## [1.5.0] - 2026-07-26
 
@@ -690,7 +737,7 @@ sso-manager-node 1.5.0:
 - `GET /api/user/me` now also reports `isAdmin` (membership in `app_sso_admin`), the single effective-rights flag the shared UI shell gates the update banner on. Group-level gating still reads `memberOf`.
 
 ### Verified
-- Browser-verified against a full theta-env stack (sso-manager + proxy + jump-host): every top-level page renders with a clean console; nav gating is correct for admin and non-admin; `forceLogin`'s onboarding and group gates fire; `val.js` blocks a weak password and accepts a strong one through a real form submit; the DELETE-method forms work; and the OIDC login round trip (authorize with PKCE -> login -> consent -> callback -> token fragment) completes on both OIDC clients.
+- Browser-verified against a full theta-suite stack (sso-manager + proxy + jump-host): every top-level page renders with a clean console; nav gating is correct for admin and non-admin; `forceLogin`'s onboarding and group gates fire; `val.js` blocks a weak password and accepts a strong one through a real form submit; the DELETE-method forms work; and the OIDC login round trip (authorize with PKCE -> login -> consent -> callback -> token fragment) completes on both OIDC clients.
 
 proxy 1.4.0:
 
@@ -713,7 +760,7 @@ proxy 1.4.0:
 - Admin-only nav items lost their inline `display: none` in favour of that class, and the brand link points at `/` instead of `#`.
 
 ### Verified
-- Browser-verified against a full theta-env stack (sso-manager + proxy + jump-host): every top-level page renders with a clean console; nav gating is correct for admin and non-admin; `forceLogin`'s onboarding and group gates fire; `val.js` blocks a weak password and accepts a strong one through a real form submit; the DELETE-method forms work; and the OIDC login round trip (authorize with PKCE -> login -> consent -> callback -> token fragment) completes on both OIDC clients.
+- Browser-verified against a full theta-suite stack (sso-manager + proxy + jump-host): every top-level page renders with a clean console; nav gating is correct for admin and non-admin; `forceLogin`'s onboarding and group gates fire; `val.js` blocks a weak password and accepts a strong one through a real form submit; the DELETE-method forms work; and the OIDC login round trip (authorize with PKCE -> login -> consent -> callback -> token fragment) completes on both OIDC clients.
 
 jump-host 1.3.0:
 
@@ -736,7 +783,7 @@ jump-host 1.3.0:
 - `#spa-shell` dropped its inline `margin-top`; `styles.css` already sets it and the shared shell adjusts it when a banner is shown.
 
 ### Verified
-- Browser-verified against a full theta-env stack (sso-manager + proxy + jump-host): every top-level page renders with a clean console; nav gating is correct for admin and non-admin; `forceLogin`'s onboarding and group gates fire; `val.js` blocks a weak password and accepts a strong one through a real form submit; the DELETE-method forms work; and the OIDC login round trip (authorize with PKCE -> login -> consent -> callback -> token fragment) completes on both OIDC clients.
+- Browser-verified against a full theta-suite stack (sso-manager + proxy + jump-host): every top-level page renders with a clean console; nav gating is correct for admin and non-admin; `forceLogin`'s onboarding and group gates fire; `val.js` blocks a weak password and accepts a strong one through a real form submit; the DELETE-method forms work; and the OIDC login round trip (authorize with PKCE -> login -> consent -> callback -> token fragment) completes on both OIDC clients.
 
 ## [1.4.0] - 2026-07-25
 
@@ -834,12 +881,12 @@ sso-manager-node 1.3.2:
 sso-manager-node 1.3.1:
 
 ### Added
-- The Directory documentation (`docs/directory.md`) is now surfaced: registered in-app at `/docs/directory` ("Directory & Inventory"), help-linked from the Directory page header, and linked from the docs-site index. Extended with the shared slug conventions (`site_<name>`, `host_<hostname>` — as used by ldap-client and the theta-env seed), the automatic-registration story (theta-env stack seeding, ldap-client Linux host enrollment), and the API surface (admin at `/api/directory-admin`, read-only graph at `/api/discovery`).
+- The Directory documentation (`docs/directory.md`) is now surfaced: registered in-app at `/docs/directory` ("Directory & Inventory"), help-linked from the Directory page header, and linked from the docs-site index. Extended with the shared slug conventions (`site_<name>`, `host_<hostname>` — as used by ldap-client and the theta-suite seed), the automatic-registration story (theta-suite stack seeding, ldap-client Linux host enrollment), and the API surface (admin at `/api/directory-admin`, read-only graph at `/api/discovery`).
 
 ### Changed
 - Direct LDAP binds are described as first-class, not "legacy", across README, DEPLOYMENT.md, docs, and the Dockerfile: Linux hosts are a primary consumer of the directory (PAM/SSSD login, LDAP-backed `sudo` via `sudoRole`, SSH public keys via openssh-lpk) — exactly what the custom schemas exist for.
 
-### theta-env own changes
+### theta-suite own changes
 
 ### Added
 - `CFG_SITE_NAME` in `setup.env` (right below `CFG_DOMAIN`, default `local`): names the SSO directory site the stack registers itself under — slug `site_<name>`, matching the `parentSlug` convention ldap-client-joined Linux hosts use, so they land under the same site.
@@ -915,7 +962,7 @@ sso-manager-node:
 ### Changed
 - Refreshed all README screenshots (dashboard, users, groups, OAuth apps) against the current UI, and added a new Sites & Replication screenshot.
 
-### theta-env own changes
+### theta-suite own changes
 - Refreshed `docs/images/sso-dashboard.png` and `docs/images/proxy-hosts.png` to match the submodules' updated screenshots.
 
 ## [1.1.20] - 2026-07-20
@@ -945,7 +992,7 @@ sso-manager-node:
 - `routes/index.js` now derives the displayed LDAPS URL from `conf.ldap.ldapsHost`/`ldapsPort` with fallback to the OAuth issuer host.
 - `docs/configuration.md`, `docs/ldap.md`, `DEPLOYMENT.md`, and `secrets.js.example` document the new `ldapsHost`/`ldapsPort` options and recommended network layouts.
 
-### theta-env own changes
+### theta-suite own changes
 - `setup.env.example` adds optional `CFG_LDAPS_HOST` for the internal LDAPS hostname.
 - `setup.sh` passes `CFG_LDAPS_HOST` into the generated `./config/sso-secrets.js` as `ldap.ldapsHost`.
 - `config.example/sso-secrets.js.example` documents `ldap.ldapsHost` / `ldap.ldapsPort`.
@@ -989,7 +1036,7 @@ sso-manager-node:
 ### Fixed
 - `models/email.js`: fixed from-address template rendering bug.
 
-### theta-env own changes
+### theta-suite own changes
 - `CHANGELOG.md` now embeds the full app-level release notes for each submodule bump, not just links.
 - `.env.example` no longer ships realistic-looking default passwords; values are clearly placeholders.
 - `config.example/*.js.example` comments now describe the actual `CONF_SECRETS` env-var loading mechanism.
@@ -1129,10 +1176,10 @@ sso-manager-node:
 - proxy -> [v1.1.7](https://github.com/theta42/proxy/releases/tag/v1.1.7)
 - sso-manager-node -> [v1.1.6](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.6)
 
-Both: redesigned the GitHub Pages docs site to match each app's own look (dark navbar/footer, Bootstrap 5, Font Awesome) instead of the generic `jekyll-theme-cayman` theme, added a real cross-page nav, SEO (`jekyll-seo-tag` + `jekyll-sitemap`), and mobile-responsive layout. theta-env's own docs site got the same treatment in this release too (see below).
+Both: redesigned the GitHub Pages docs site to match each app's own look (dark navbar/footer, Bootstrap 5, Font Awesome) instead of the generic `jekyll-theme-cayman` theme, added a real cross-page nav, SEO (`jekyll-seo-tag` + `jekyll-sitemap`), and mobile-responsive layout. theta-suite's own docs site got the same treatment in this release too (see below).
 
 ### Changed
-- theta-env's own docs site redesigned the same way -- dark navbar/footer using the shared theta42 logo (this repo has no app UI of its own), cross-page nav, SEO, mobile-responsive. `docs/index.md`'s "More docs" section removed (redundant with the new nav).
+- theta-suite's own docs site redesigned the same way -- dark navbar/footer using the shared theta42 logo (this repo has no app UI of its own), cross-page nav, SEO, mobile-responsive. `docs/index.md`'s "More docs" section removed (redundant with the new nav).
 - Added `docs/_site` to `.gitignore` (missing entirely before).
 
 ## [1.1.6] - 2026-07-16
@@ -1165,7 +1212,7 @@ Both: bumped `jq-repeat` 2.0.1 -> 2.1.0. proxy fixed real breakage from the remo
 ## [1.1.3] - 2026-07-16
 
 ### Added
-- `CHANGELOG.md` (this file). Closes [#43](https://github.com/theta42/theta-env/issues/43).
+- `CHANGELOG.md` (this file). Closes [#43](https://github.com/theta42/theta-suite/issues/43).
 
 ### Bumped
 - proxy -> [v1.1.3](https://github.com/theta42/proxy/releases/tag/v1.1.3)
@@ -1200,23 +1247,23 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 - proxy -> [v1.1.0](https://github.com/theta42/proxy/releases/tag/v1.1.0)
 - sso-manager-node -> [v1.1.0](https://github.com/theta42/sso-manager-node/releases/tag/v1.1.0)
 
-[Unreleased]: https://github.com/theta42/theta-env/compare/v1.4.0...HEAD
-[1.4.0]: https://github.com/theta42/theta-env/compare/v1.3.7...v1.4.0
-[1.1.17]: https://github.com/theta42/theta-env/compare/v1.1.16...v1.1.17
-[1.1.16]: https://github.com/theta42/theta-env/compare/v1.1.15...v1.1.16
-[1.1.15]: https://github.com/theta42/theta-env/compare/v1.1.14...v1.1.15
-[1.1.14]: https://github.com/theta42/theta-env/compare/v1.1.13...v1.1.14
-[1.1.13]: https://github.com/theta42/theta-env/compare/v1.1.12...v1.1.13
-[1.1.12]: https://github.com/theta42/theta-env/compare/v1.1.11...v1.1.12
-[1.1.11]: https://github.com/theta42/theta-env/compare/v1.1.10...v1.1.11
-[1.1.10]: https://github.com/theta42/theta-env/compare/v1.1.9...v1.1.10
-[1.1.9]: https://github.com/theta42/theta-env/compare/v1.1.8...v1.1.9
-[1.1.8]: https://github.com/theta42/theta-env/compare/v1.1.7...v1.1.8
-[1.1.7]: https://github.com/theta42/theta-env/compare/v1.1.6...v1.1.7
-[1.1.6]: https://github.com/theta42/theta-env/compare/v1.1.5...v1.1.6
-[1.1.5]: https://github.com/theta42/theta-env/compare/v1.1.4...v1.1.5
-[1.1.4]: https://github.com/theta42/theta-env/compare/v1.1.3...v1.1.4
-[1.1.3]: https://github.com/theta42/theta-env/compare/v1.1.2...v1.1.3
-[1.1.2]: https://github.com/theta42/theta-env/compare/v1.1.1...v1.1.2
-[1.1.1]: https://github.com/theta42/theta-env/compare/v1.1.0...v1.1.1
-[1.1.0]: https://github.com/theta42/theta-env/releases/tag/v1.1.0
+[Unreleased]: https://github.com/theta42/theta-suite/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/theta42/theta-suite/compare/v1.3.7...v1.4.0
+[1.1.17]: https://github.com/theta42/theta-suite/compare/v1.1.16...v1.1.17
+[1.1.16]: https://github.com/theta42/theta-suite/compare/v1.1.15...v1.1.16
+[1.1.15]: https://github.com/theta42/theta-suite/compare/v1.1.14...v1.1.15
+[1.1.14]: https://github.com/theta42/theta-suite/compare/v1.1.13...v1.1.14
+[1.1.13]: https://github.com/theta42/theta-suite/compare/v1.1.12...v1.1.13
+[1.1.12]: https://github.com/theta42/theta-suite/compare/v1.1.11...v1.1.12
+[1.1.11]: https://github.com/theta42/theta-suite/compare/v1.1.10...v1.1.11
+[1.1.10]: https://github.com/theta42/theta-suite/compare/v1.1.9...v1.1.10
+[1.1.9]: https://github.com/theta42/theta-suite/compare/v1.1.8...v1.1.9
+[1.1.8]: https://github.com/theta42/theta-suite/compare/v1.1.7...v1.1.8
+[1.1.7]: https://github.com/theta42/theta-suite/compare/v1.1.6...v1.1.7
+[1.1.6]: https://github.com/theta42/theta-suite/compare/v1.1.5...v1.1.6
+[1.1.5]: https://github.com/theta42/theta-suite/compare/v1.1.4...v1.1.5
+[1.1.4]: https://github.com/theta42/theta-suite/compare/v1.1.3...v1.1.4
+[1.1.3]: https://github.com/theta42/theta-suite/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/theta42/theta-suite/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/theta42/theta-suite/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/theta42/theta-suite/releases/tag/v1.1.0

@@ -1,7 +1,7 @@
-title: theta-env
+title: theta-suite
 description: A unified, one-command SSO Manager + OIDC proxy stack for home labs and small businesses.
 url: "https://theta42.github.io"
-baseurl: "/theta-env"
+baseurl: "/theta-suite"
 logo: /assets/img/theta42.svg
 lang: en_US
 
@@ -10,10 +10,10 @@ plugins:
   - jekyll-sitemap
 
 github:
-  repository_url: https://github.com/theta42/theta-env
-  zip_url: https://github.com/theta42/theta-env/archive/refs/heads/master.zip
-  tar_url: https://github.com/theta42/theta-env/archive/refs/heads/master.tar.gz
-  repository_name: theta42/theta-env
+  repository_url: https://github.com/theta42/theta-suite
+  zip_url: https://github.com/theta42/theta-suite/archive/refs/heads/master.zip
+  tar_url: https://github.com/theta42/theta-suite/archive/refs/heads/master.tar.gz
+  repository_name: theta42/theta-suite
 
 nav:
   - title: Home
@@ -32,7 +32,7 @@ nav:
     page: /standalone.html
     icon: fa-puzzle-piece
   - title: Changelog
-    url: https://github.com/theta42/theta-env/blob/master/CHANGELOG.md
+    url: https://github.com/theta42/theta-suite/blob/master/CHANGELOG.md
     icon: fa-list
 
 defaults:
