@@ -44,6 +44,8 @@ services:
         NO_PROXY: ${CFG_NO_PROXY:-}
     container_name: sso-manager
     restart: unless-stopped
+    depends_on:
+      - openbao
     networks: [theta-net]
     ports:
       # SSO web UI. Bind address is configurable via SSO_BIND (default 0.0.0.0 so
@@ -64,6 +66,7 @@ services:
       - NODE_PORT=3001
       - LDAP_SERVER_ID=${LDAP_SERVER_ID:-}
       - LDAP_REPLICATION_HOSTS=${LDAP_REPLICATION_HOSTS:-}
+      - VAULT_TOKEN=${VAULT_TOKEN:-}
       # Optional upstream HTTP(S) proxy for outbound calls (SMTP, etc.) at
       # runtime. See the build args above for the same setting during build.
       - HTTP_PROXY=${CFG_HTTP_PROXY:-}
@@ -214,6 +217,22 @@ services:
       - ./config/ldap-test-host.vars:/config/ldap.vars:ro
       - ./config/ldap-ca.crt:/config/ldap-ca.crt:ro
 
+  openbao:
+    image: quay.io/openbao/openbao:latest
+    container_name: openbao
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    command: server -config=/vault/config/openbao.hcl
+    environment:
+      - BAO_ADDR=http://127.0.0.1:8200
+    ports:
+      - "8080:8200"
+    volumes:
+      - ./config/openbao.hcl:/vault/config/openbao.hcl:ro
+      - openbao-data:/vault/data
+    networks:
+      - theta-net
 networks:
   theta-net:
     driver: bridge
@@ -227,3 +246,4 @@ volumes:
   proxy-logs:
   jump-data:
   jump-redis-data:
+  openbao-data:
