@@ -23,6 +23,13 @@
  *                               into the file (the sso-manager mounts ./config
  *                               read-write for this purpose).
  *
+ * Generated creds are ALSO written into OpenBao (secret/proxy/conf and, when
+ * the jump host is enabled, secret/jump-host/conf) so the proxy + jump host
+ * load them from OpenBao at boot via @simpleworkjs/bao-conf. setup.sh passes
+ * the root VAULT_TOKEN on this exec for that purpose. The OpenBao write is
+ * fail-soft: if VAULT_TOKEN is unset or OpenBao is unreachable, the /config
+ * file remains the fallback and bootstrap does not fail the bring-up over it.
+ *
  * Idempotent: re-running converges to the ./config values. The LDAP service
  * account + admin passwords are reset to the file values on each run; the
  * OAuth client is created if missing. If proxy-secrets.js already holds a
@@ -86,6 +93,44 @@ const ADMIN_GROUPS = ['app_sso_admin', 'app_sso_oauth_admin'];
 
 const log  = (...a) => process.stderr.write('[bootstrap] ' + a.join(' ') + '\n');
 const out  = (k, v) => process.stdout.write(`${k}=${v}\n`);
+
+// ── OpenBao (Vault) writes ───────────────────────────────────────────────────
+// bootstrap generates the proxy's + jump host's OAuth client creds and writes
+// them back into /config/*-secrets.js (the file fallback). It ALSO writes the
+// complete conf into OpenBao so the proxy + jump host load it from there at
+// boot via @simpleworkjs/bao-conf. setup.sh passes the root VAULT_TOKEN on this
+// exec. Fail-soft: if VAULT_TOKEN is unset or OpenBao is unreachable, the write
+// is skipped with a warning — the file remains the fallback and bootstrap does
+// not fail the bring-up over it.
+const VAULT_ADDR  = process.env.VAULT_ADDR || 'http://openbao:8200';
+const VAULT_TOKEN = process.env.VAULT_TOKEN || '';
+
+// Re-require a /config module after its file has been rewritten on disk
+// (require caches the old contents otherwise).
+function freshRequire(p) {
+	delete require.cache[require.resolve(p)];
+	return require(p);
+}
+
+// PUT (replace) the data at secret/data/<vaultPath> with `data`. Warn-only.
+async function baoPut(vaultPath, data) {
+	if (!VAULT_TOKEN) { log('OpenBao: VAULT_TOKEN unset — skipping write of secret/' + vaultPath); return; }
+	try {
+		const res = await fetch(`${VAULT_ADDR}/v1/secret/data/${vaultPath}`, {
+			method: 'POST',
+			headers: { 'X-Vault-Token': VAULT_TOKEN, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ data }),
+		});
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			log(`WARNING: OpenBao write secret/${vaultPath} failed (${res.status}) ${text} — app will use its file fallback`);
+		} else {
+			log(`OpenBao: wrote secret/${vaultPath}`);
+		}
+	} catch (e) {
+		log(`WARNING: OpenBao write secret/${vaultPath} threw (${e.message}) — app will use its file fallback`);
+	}
+}
 
 // Replicate the SSO's hashPasswordSSHA512 (models/user_ldap.js) exactly so the
 // directory stores passwords the SSO can verify on bind (pw-sha2 module).
@@ -663,6 +708,14 @@ async function provisionJumpHost(token) {
 			resolvedClientId = id;
 		}
 
+		// Mirror the (now-current) proxy-secrets.js into OpenBao so the proxy
+		// loads it from there at boot via @simpleworkjs/bao-conf. Re-require
+		// fresh: writeProxyCreds rewrote the file out from under the cached
+		// `proxy` object. setup.sh's seed already put a placeholder version
+		// here; this replaces it with the complete file (operator edits +
+		// generated OAuth creds). Warn-only.
+		await baoPut('proxy/conf', freshRequire('/config/proxy-secrets.js'));
+
 		// Provision the jump host (mint token + write config) when enabled.
 		// Warn-only — never fail the whole bring-up over the optional service.
 		let jumpClientId = null;
@@ -670,6 +723,13 @@ async function provisionJumpHost(token) {
 			try {
 				jumpClientId = await provisionJumpHost(token);
 				out('JUMP_HOST_CONFIGURED', '1');
+				// Mirror jump-secrets.js (just written by provisionJumpHost)
+				// into OpenBao so the jump host loads it from there at boot via
+				// @simpleworkjs/bao-conf. setup.sh's seed may have put a
+				// placeholder/stale version here; this replaces it with the
+				// complete file (LDAP bind, minted API token, OAuth client).
+				// Warn-only.
+				await baoPut('jump-host/conf', freshRequire(JUMP_SECRETS));
 			} catch (e) {
 				log(`WARNING: jump host provisioning failed (${e.message || e}) — continuing`);
 			}

@@ -181,11 +181,21 @@ operator-owned and `setup.env` is ignored.
    would 404. Idempotent; skips a host that already exists.
 6. Prints your first admin login + the public URLs.
 
-### Configuration — `./config/` (no `.env` files)
+### Configuration & secrets — OpenBao + `./config/`
 
-All config and secrets live in a bind-mounted `./config/` directory (gitignored),
-read by each app's `@simpleworkjs/conf` via the `CONF_SECRETS` env var, which
-the entrypoint points at the mounted file:
+Secrets live in **OpenBao** (a Vault fork, container `openbao:8200` on
+`theta-net`), the single authoritative store. Each app loads them at boot with
+[@simpleworkjs/bao-conf](https://simpleworkjs.github.io/bao-conf/), which
+deep-merges `secret/<app>/conf` over the file-loaded config — **fail-soft**, so
+if OpenBao is unreachable the app boots from the file fallback. End users get
+personal per-user secret storage (`secret/users/<uid>/*`) in the SSO **Vault**
+UI, and admins mint scoped tokens for external apps (`secret/apps/<name>/*`).
+See **[docs/secrets.md](docs/secrets.md)** for the full architecture, policies,
+token model, rotation, and the external-app convention.
+
+A bind-mounted `./config/` directory (gitignored) holds the operator-edit
+seed files and the fail-soft fallback, read by each app's `@simpleworkjs/conf`
+via the `CONF_SECRETS` env var:
 
 - **`./config/sso-secrets.js`** — SSO config: `ldap` (base, admin password,
   user/group bases), `oauth` (issuer, `jwtSecret`), `smtp`, `name`, plus
@@ -196,11 +206,15 @@ the entrypoint points at the mounted file:
   same `serviceAccountPass`), `auth` (admin groups/users).
 
 `./setup.sh` generates both on first run from `./setup.env` (the one place the
-domain is entered — see *Quickstart*) with random secrets. There is **no
-`.env` / `proxy.env`** — edit `./config/*.js` directly. Compose only interpolates
-port defaults (`SSO_PORT`, `HTTP_PORT`, etc.), which you can override on the
-command line: `SSO_BIND=127.0.0.1 ./setup.sh`. See `config.example/` for the
-full annotated shape, and each submodule's `secrets.js.example`.
+domain is entered — see *Quickstart*) with random secrets, seeds them into
+OpenBao, and mints scoped per-app tokens (`SSO_VAULT_TOKEN` /
+`PROXY_VAULT_TOKEN` / `JUMP_VAULT_TOKEN`) into `./.env`. There is **no
+`.env` / `proxy.env`** for app config — edit `./config/*.js` directly (and
+re-seed into OpenBao, or use the SSO Configuration UI for live edits). Compose
+only interpolates port defaults (`SSO_PORT`, `HTTP_PORT`, etc.), which you can
+override on the command line: `SSO_BIND=127.0.0.1 ./setup.sh`. See
+`config.example/` for the full annotated shape, and each submodule's
+`secrets.js.example`.
 
 > **Migrating from an older `.env`-based deployment?** If `.env` and/or
 > `proxy.env` exist when you first run `./setup.sh`, it migrates them into
@@ -329,8 +343,11 @@ docker compose cp sso-manager:/data/dump.rdb sso-manager.rdb
 docker compose exec proxy redis-cli BGSAVE
 docker compose cp proxy:/data/dump.rdb proxy.rdb
 
-# Secrets
+# Secrets — ./config/ (the seed/fallback; OpenBao is authoritative)
 cp -a ./config config-backup && chmod 700 config-backup
+# OpenBao (the authoritative secret store — back up its data volume)
+docker run --rm -v theta-env_openbao-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/openbao-data.tgz -C /data .
 ```
 
 ### Restore — full disaster recovery
