@@ -404,36 +404,6 @@ Redis and are preserved by the volume.
 
 ---
 
-## Running a component individually
-
-> The integrated stack (`./setup.sh`) is the supported path. The per-project
-> commands below are for the advanced case of running one component on its own
-> (separate host, no orchestrator) — you then manage secrets from the
-> `config/*-secrets.js` file only (no shared OpenBao) and do the OIDC/LDAP wiring
-> by hand. See [docs/standalone.md](docs/standalone.md).
-
-Each submodule builds and runs on its own:
-
-- **SSO Manager alone**:
-  ```bash
-  cd sso-manager-node
-  mkdir -p config && cp secrets.js.example config/sso-secrets.js   # edit it
-  docker compose up -d --build
-  ```
-  See its [DEPLOYMENT.md](sso-manager-node/DEPLOYMENT.md).
-
-- **Proxy alone** (pointing at any external SSO + LDAP via a mounted
-  `secrets.js`):
-  ```bash
-  cd proxy
-  mkdir -p config && cp secrets.js.example config/proxy-secrets.js   # edit it
-  docker compose up -d --build
-  ```
-  See its [DEPLOYMENT.md](proxy/DEPLOYMENT.md).
-
-No cross-repo file edits are needed at runtime — the unified stack is pure
-composition (one compose file + one bootstrap script).
-
 ---
 
 ## How the first-run wiring works

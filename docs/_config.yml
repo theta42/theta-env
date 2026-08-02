@@ -28,9 +28,15 @@ nav:
   - title: Secrets
     page: /secrets.html
     icon: fa-key
-  - title: Standalone
-    page: /standalone.html
-    icon: fa-puzzle-piece
+  - title: SSO Manager
+    page: /sso/
+    icon: fa-users
+  - title: Proxy
+    page: /proxy/
+    icon: fa-shield-halved
+  - title: Jump Host
+    page: /jump-host/
+    icon: fa-terminal
   - title: Changelog
     url: https://github.com/theta42/theta-suite/blob/master/CHANGELOG.md
     icon: fa-list
