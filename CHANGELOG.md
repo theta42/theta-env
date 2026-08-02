@@ -8,6 +8,100 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.31.1] - 2026-08-01
+
+Pairs the sso v1.17.2 post-deploy fixes with the theta-suite half of the
+`/vault` secrets-list 403 fix (the `sso-admin` OpenBao policy grant that lives
+in `setup.sh`), and rolls the `sso-manager-node` submodule gitlink to v1.17.2.
+`proxy` (v1.13.1), `jump-host` (v1.14.1), and `ldap-client` (v1.23.0) are
+unchanged.
+
+### Changed (theta-suite)
+- **`setup.sh` — `sso-admin` policy**: added a `list` grant on the bare KV mount
+  root `secret/metadata` so an admin can list the top-level dirs in the `/vault`
+  UI. `secret/metadata/*` already covered nested paths, but not the mount root
+  itself — so the secrets list 403'd. (The matching per-user/per-app directory
+  grants ship in sso v1.17.2's `vault_broker.js`.)
+- **`setup.sh` — `ensure_policy`**: now always (re)writes the policy instead of
+  skipping when it exists. `bao policy write` is an idempotent overwrite, so a
+  re-run applies policy edits (like the new grant above) instead of stranding
+  the old HCL with "already exists — keeping."
+
+### Changed (submodule gitlinks)
+- **sso-manager-node**: `v1.17.1` → `v1.17.2` — the post-deploy fixes (auto-slug
+  plugins, schedule dropdown, `/profile` rendering, plugin-edit persistence,
+  nmap in the image, the sso-side `/vault` policy grants) plus the SMS (VoIP.ms)
+  and Terms-of-Service configuration on `/conf`. Full changelog below.
+
+### Deploy
+Operators upgrading from v1.31.0:
+1. `git pull` and `git submodule update --init --recursive`.
+2. Re-run `./setup.sh` — **required**: applies the new `sso-admin`
+   `secret/metadata` list grant and the `ensure_policy` always-write refresh
+   (idempotent). Per-user vault policies self-heal on the next `/vault` visit
+   (sso v1.17.2 re-writes them).
+3. `docker compose build && docker compose up -d` — the rebuild installs `nmap`
+   in the sso image (fixes the nmap plugin "not found" error).
+
+### Bundled submodule release notes
+
+#### sso-manager-node v1.17.2 — post-deploy fixes + SMS/TOS on /conf
+
+Post-deploy fixes from testing the v1.31.0 stack, plus the SMS (VoIP.ms) and
+Terms-of-Service configuration the `/conf` page was missing.
+
+##### Fixed
+- **Plugin slug is now auto-generated** from the instance name — the New Plugin
+  modal no longer asks for a Slug (it derives a stable, unique handle from the
+  name, appending `-2`, `-3`, … on collision). The generated slug still shows in
+  the table and the Edit (read-only) modal. `POST /api/plugins` `slug` is now
+  optional; an explicit slug is still accepted and validated.
+- **Plugin schedule is a dropdown**, not a raw cron box: Hourly / Daily /
+  Weekly, plus **Custom** which reveals the raw 5-field cron input. Stored value
+  is still a cron string, so the server is unchanged.
+- **`/vault` secrets list no longer 403s.** The per-user, per-app, and admin
+  OpenBao policies granted `list` only on `secret/metadata/.../*` (nested
+  paths), never on the directory path itself — so listing a directory's
+  *contents* (which checks `list` on the directory, e.g.
+  `secret/metadata/users/<uid>` or the mount root `secret/metadata`) was denied.
+  `vault_broker.js`'s `userPolicyHcl`/`appPolicyHcl` now also grant `list` on the
+  bare directory path, and `ensurePolicy` now always re-writes the policy
+  (idempotent) so already-created `user-<uid>` policies pick up the new grant on
+  the next vault-page visit. The matching `sso-admin` mount-root grant ships in
+  theta-suite v1.31.1 (`setup.sh`), where `ensure_policy` is likewise made
+  always-write so re-running `./setup.sh` applies policy edits.
+- **`/profile` no longer shows literal `{{…}}` tags.** Three template fragments
+  sat outside the `jq-repeat="user"` scope, so they rendered raw: the card
+  header `Profile: {{user.uid}}`, the `Members of {{user.uid}}'s Group` tab
+  label, and the Admin Actions block's `{{#isActive}}`/`{{#isInactive}}`
+  buttons. The header/label are now populated by JS (the `Members` label
+  already had a setter pointing at a missing id); the Admin Actions block is
+  moved inside the scope so `{{uid}}`/`{{#isActive}}`/`{{#isInactive}}` render
+  and the correct Activate/Deactivate button shows.
+- **Editing a plugin now persists.** The Edit modal had been prefilled with the
+  masked secret values and rendered them as fields, but `PUT /:id` only saves
+  non-secret config — so an edited secret was silently dropped. The Edit modal
+  now shows **non-secret fields only** (secrets have their own Edit-Secrets
+  modal), removing the confusion.
+- **nmap plugin: "NMAP not found at command location: nmap"** — the `nmap`
+  binary was not installed in the app image. `Dockerfile.openldap` now `apk
+  add`s `nmap` in the runtime stage, and `plugins/discovery/nmap.js` translates
+  the opaque node-nmap spawn-missing error into an actionable `lastError`.
+
+##### Added
+- **SMS (VoIP.ms) configuration on `/conf`.** The existing VoIP.ms SMS sender
+  (`models/sms.js`, used for 2FA OTP delivery) was configurable only via env /
+  config files. It now has an SMS card on `/conf` (API username, DID, API
+  password), saved to OpenBao at `secret/sso-manager/conf` under `voipms`, with
+  the API password masked (`********`) and leave-blank-to-keep — mirroring the
+  SMTP card exactly. `models/sms.js` reads `conf.voipms.*` at call time, so a
+  saved change takes effect live without a restart.
+- **Terms of Service editor moved to `/conf`** from the admin Overview
+  dashboard, where it never belonged. The same `app.tos.get`/`update` flow,
+  the "require all users to re-accept" checkbox, and the `app_sso_admin` gate
+  (matching `routes/tos.js`'s PUT gate) are preserved. The Overview page keeps
+  stats, notifications, and metrics.
+
 ## [v1.31.0] - 2026-08-01
 
 Roll-up release: bumps the composed submodules to their latest tags so a fresh

@@ -712,12 +712,12 @@ bao_run() { docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao "$@"; }
 # Write an ACL policy from stdin HCL only if it does not already exist.
 ensure_policy() {
 	local name="$1"
-	if bao_run policy read "$name" >/dev/null 2>&1; then
-		info "  policy ${name} already exists — keeping."
-	else
-		info "  writing policy ${name}..."
-		docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao policy write "$name" - >/dev/null
-	fi
+	# Always (re)write: `bao policy write` is an idempotent overwrite, so this
+	# applies policy edits on a re-run instead of stranding the old HCL
+	# forever ("already exists — keeping" silently dropped upgrades — e.g.
+	# the secret/metadata mount-root list grant added for the /vault fix).
+	info "  writing policy ${name}..."
+	docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao policy write "$name" - >/dev/null
 }
 
 # Read KEY= from ./.env (empty if absent) — reuse a previously minted token
@@ -787,8 +787,12 @@ path "sys/policies/acl/app-*" { capabilities = ["create", "read", "update", "del
 path "sys/policies/acl/sso-admin" { capabilities = ["create", "read", "update", "delete", "list"] }
 HCL
 # sso-admin — admin users in the vault UI: read/write/list everything under secret/.
+# The bare `secret/metadata` grant lets an admin LIST the KV mount root (the
+# top-level dirs); `secret/metadata/*` covers nested paths but not the root
+# itself, so without it the /vault secrets list 403s.
 ensure_policy sso-admin <<'HCL'
 path "secret/data/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata" { capabilities = ["list", "read", "delete"] }
 path "secret/metadata/*" { capabilities = ["list", "read", "delete"] }
 HCL
 # proxy / jump-host — read only their own boot conf.
