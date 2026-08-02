@@ -140,6 +140,13 @@ then converges the stack to your `./config/` values (LDAP service account + admi
 passwords are reset to the config; the OAuth client is kept if `proxy-secrets.js`
 already holds its creds).
 
+> **Troubleshooting: "A newer version is available" after running setup.sh?**
+> If the UI shows this warning immediately after you ran `./setup.sh`, the latest
+> GitHub release tag might not yet be merged into the default tracking branch for
+> the submodules, or Docker may have cached the `COPY` step if the `package.json`
+> didn't change. You can force a clean rebuild by running
+> `docker compose build --no-cache` and then re-running `./setup.sh`.
+
 ---
 
 ## Direct LDAP for LDAP-native clients and Linux hosts

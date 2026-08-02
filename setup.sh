@@ -61,6 +61,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
 CONFIG_DIR=./config
 BACKUP_DIR=./backups
 BACKUP_KEEP="${BACKUP_KEEP:-5}"
@@ -1045,7 +1046,7 @@ echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
 
 # ── 8. Summary ───────────────────────────────────────────────────────────────
 echo
-echo -e "\033[1;34m[setup]\033[0m \033[1;32mDone. Your SSO + proxy stack is up.\033[0m"
+printf '\033[1;34m[setup]\033[0m \033[1;32mDone. Your SSO + proxy stack is up.\033[0m\n'
 echo
 echo "  SSO Manager UI:    https://${SSO_HOST}   (fronted by the proxy under TLS)"
 echo "                      first-run fallback: http://127.0.0.1:${SSO_PORT:-3001}"
