@@ -8,6 +8,143 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.31.0] - 2026-08-01
+
+Roll-up release: bumps the composed submodules to their latest tags so a fresh
+`git clone` + `./setup.sh` deploys the SSO Manager plugin system, the `/conf`
+SMTP/OAuth secret masking, and the ldap-client changelog. `proxy` (v1.13.1) and
+`jump-host` (v1.14.1) were already at latest and are unchanged.
+
+### Changed (submodule gitlinks)
+- **sso-manager-node**: `v1.16.1` → `v1.17.1` (the plugin system shipped in
+  v1.17.0, plus the v1.17.1 `/conf` secret-masking hardening).
+- **ldap-client**: `v1.1.1` → `v1.23.0` — a CHANGELOG-only release (the new
+  `CHANGELOG.md` documenting v1.1.0/v1.0.0; **no code change** — the "UI polish"
+  tag message is misleading, the v1.1.1…v1.23.0 diff is `CHANGELOG.md` only).
+
+### Deploy
+Operators upgrading from a prior release:
+1. `git pull` and `git submodule update --init --recursive` (or a fresh clone).
+2. Re-run `./setup.sh` — this is **required** if you haven't yet applied the
+   v1.30.1 `sso-broker` OpenBao policy grant for `secret/plugins/*` (idempotent;
+   it grants the existing `SSO_VAULT_TOKEN` access live, so plugin-secrets
+   storage works).
+3. `docker compose build && docker compose up -d`. Existing
+   `conf.discovery.plugins` setups auto-migrate into `PluginInstance` rows +
+   OpenBao secrets on first boot of sso v1.17.x.
+
+### Bundled submodule release notes
+
+#### sso-manager-node v1.17.0 — real plugin system (loadable instances + OpenBao secrets)
+
+## [1.17.0] - 2026-08-01
+
+A real **plugin system**: the half-built discovery plugins (statically
+configured in `sso-secrets.js`, only toggleable for cron/enabled) become
+**configurable, loadable/unloadable plugin instances** you manage from a
+dedicated **Plugins** page and the `/api/plugins` API, with multiple runtime
+copies of each type and per-instance secrets stored in OpenBao.
+
+### Added
+- **Plugin instances** — a new `PluginInstance` ORM model
+  (`nodejs/models/plugin_instance.js`, Sequelize) is the registry of
+  configured, scheduled plugin copies. Each has a `pluginType`, a unique
+  `slug` (the discovery source name), a cron schedule, an `enabled` flag
+  (load/unload), non-secret `config` (JSON), and last-run bookkeeping. Multiple
+  instances of the same type are supported.
+- **Plugin registry** (`nodejs/services/plugin_registry.js`) — generalizes the
+  one-shot discovery-plugin scan in `scheduler.js`. Plugin types are modules
+  under `nodejs/plugins/<category>/<type>.js` exporting a manifest
+  (`type`, `category`, `name`, `description`, `configSchema`, `validate`,
+  `run`/`discover`). Exposes `getTypes`, `getModule`, `splitConfig` (secret vs
+  non-secret), `mask`, and required-field helpers for the UI/API.
+- **Per-instance secrets in OpenBao** (`nodejs/utils/plugin_secrets.js`) —
+  `configSchema` fields flagged `secret:true` (e.g. a Proxmox `tokenSecret`,
+  UniFi `password`) are stored at `secret/plugins/<instance-id>/conf`, never in
+  the DB. The UI only ever sees masked (`********`) values. Plugins run
+  in-process (BullMQ workers), so they need no OpenBao token of their own — the
+  SSO reads/writes via the `sso-broker` token. **Requires theta-suite ≥ v1.30.1**
+  for the `sso-broker` policy grant on `secret/plugins/*`; the API fails-soft
+  with a clear error if absent.
+- **`/api/plugins` API** (`nodejs/routes/api_plugins.js`, replaces the old
+  `routes/plugins.js`) — `GET /types`, list/get/create/update/update-secrets/
+  test/load/unload/run/delete/runs. Admin-only
+  (`app_sso_admin` / `app_sso_directory_admin` / `app_super_admin`).
+- **Plugins page** (`/plugins`, `views/plugins.ejs`) + nav entry — instance
+  table with New/Edit/Edit-Secrets/Test/Run-now/Load/Unload/Delete, config forms
+  rendered from each type's `configSchema`.
+- **`validate`** ("Test" button) on the built-in Proxmox/UniFi/Nmap plugins.
+
+### Changed
+- `services/scheduler.js` now schedules from the `PluginInstance` table instead
+  of static `conf.discovery.plugins` + a Redis override hash. Each instance owns
+  a stable BullMQ JobScheduler id (`plugin:<instanceId>`) so load/unload
+  upsert/remove one schedule without disturbing the rest. Discovery plugins
+  reconcile results under the instance's `slug`.
+- The three discovery plugins (`plugins/discovery/{proxmox,unifi,nmap}.js`)
+  gained manifests (`configSchema`, `validate`, `run` alias). `nmap`'s
+  `targetRange` is non-secret; Proxmox `tokenSecret` and UniFi `password` are
+  secret.
+- The `/plugins` page route renders the page instead of redirecting to
+  `/directory`; the **Agents & Scheduler** tab was removed from `/directory`
+  (plugins are now managed on the Plugins page). The `/docs/agents` link is
+  aliased to `/docs/plugins`.
+- `docs/plugins.md`, `docs/vault.md`, `docs/_config.yml` (nav), and `API.md`
+  (Plugin Endpoints section) document the new system.
+
+### Legacy migration
+On first boot of v1.17.0, if the `PluginInstance` table is empty **and**
+`conf.discovery.plugins` has entries, one instance per configured type is seeded
+automatically (secret fields copied into OpenBao). After that the static
+config is ignored — manage plugins from the UI/API. Idempotent (guarded by the
+empty-table check).
+
+### Prerequisite
+**theta-suite ≥ v1.30.1** — re-run `./setup.sh` after upgrading so the
+`sso-broker` OpenBao policy is granted `secret/plugins/*`. Without it, storing
+plugin secrets fails with a clear error.
+
+
+#### sso-manager-node v1.17.1 — mask SMTP/OAuth secrets + leave-blank-to-keep on /conf
+
+## [1.17.1] - 2026-08-01
+
+Hardens the **runtime SMTP/OAuth secret handling** on the `/conf` admin page to
+match the plugin-secrets discipline: the SMTP password and OAuth JWT secret are
+no longer returned in cleartext by `GET /api/conf` or round-tripped through the
+form. They remain saved in OpenBao at `secret/sso-manager/conf` at runtime
+(unchanged) — only how they're surfaced to the admin changes.
+
+### Changed
+- **`GET /api/conf`** now masks `smtp.pass` and `oauth.jwtSecret` to `********`
+  (was: returned in cleartext). Non-secret fields (host, port, user, from,
+  secure, issuer, token lifetimes) are returned as before.
+- **`POST /api/conf`** now treats a blank or `********` secret-field submission
+  as "keep the current stored value" — so an admin editing the From address or
+  token lifetimes no longer has to re-enter (or leak) the SMTP password / JWT
+  secret. Only a genuinely new, non-blank value overwrites. The preserved values
+  are re-applied to live `conf` immediately, as before.
+- **`/conf` page** (`views/conf.ejs`): the Password and JWT Secret fields carry
+  a "leave unchanged to keep the current value stored in OpenBao" hint; the page
+  copy notes secret fields are masked. No JSON-textarea editing is involved —
+  SMTP is and remains configured through structured form fields.
+
+### Notes
+- SMTP (and OAuth) config was **already** saved to OpenBao at runtime before
+  this release (via `POST /api/conf` → `baoConf.set('sso-manager/conf')`, and
+  overlaid back at boot by `bao-conf.init`). This release closes the
+  cleartext-exposure gap; it does not move the storage path.
+- No theta-suite policy change required — `secret/sso-manager/conf` was already
+  granted to the `sso-broker` policy.
+
+
+#### ldap-client v1.23.0 — CHANGELOG-only (no code change)
+
+Adds a `CHANGELOG.md` documenting v1.1.0 (`app_super_admin` / `app_jump_admin`
+group support in SSSD access filters; the sso/jump-host TLS-validation
+divergence) and v1.0.0 (initial SSSD LDAP auth release). No source changes vs
+v1.1.1; the v1.23.0 tag commit only adds this file.
+
 ## [v1.30.1] - 2026-08-01
 
 Prerequisite release for the SSO Manager plugin system (shipped in
