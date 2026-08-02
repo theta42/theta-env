@@ -12,8 +12,7 @@ description: Step-by-step first run for theta-suite — prerequisites, setup.env
 
 ## Prerequisites
 
-- A Linux host with **Docker** + **Docker Compose** (the v2 plugin `docker
-  compose` or the v1 standalone `docker-compose` both work).
+- A Linux host with **Docker + Docker Compose** (you must use the modern `docker compose` v2 plugin; the older `docker-compose` v1 standalone will fail on BuildKit images).
 - Two hostnames that resolve to the host: one for the SSO UI (your `stack.ssoHost`),
   one for the proxy mgmt UI (your `stack.proxyHost`). On a real network add DNS
   records; for a local try, add them to `/etc/hosts`.
