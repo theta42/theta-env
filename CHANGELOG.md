@@ -8,6 +8,28 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.30.1] - 2026-08-01
+
+Prerequisite release for the SSO Manager plugin system (shipped in
+sso-manager-node v1.17.0). Grants the `sso-broker` OpenBao policy access to the
+new per-instance plugin secrets namespace so the SSO can store plugin secrets in
+OpenBao instead of `sso-secrets.js`.
+
+### Changed (theta-suite orchestration)
+- **`setup.sh`**: added `secret/data/plugins/*` (CRUD+list) and
+  `secret/metadata/plugins/*` (list/read/delete) to the `sso-broker` policy
+  HCL. `ensure_policy sso-broker` is idempotent, so re-running `./setup.sh`
+  immediately grants the existing `SSO_VAULT_TOKEN` access to `secret/plugins/*`
+  (policies are evaluated live; the token keeps its id). The SSO side fails-soft
+  with a clear error if this grant is absent.
+- **Docs**: `docs/secrets.md` (new "Plugin secrets" section + `sso-broker`
+  policy row) and `docs/architecture.md` (sso-manager access row) now list
+  `secret/plugins/*`.
+
+> The plugin system itself (configurable plugin instances, load/unload, UI/API,
+> multi-copy, secrets in OpenBao) is in sso-manager-node v1.17.0; theta-suite
+> will bump its submodule gitlink to that release next.
+
 ## [v1.30.0] - 2026-08-01
 
 The project is renamed **theta-env → theta-suite** — it has grown from a

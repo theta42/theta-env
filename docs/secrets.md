@@ -60,7 +60,7 @@ never passed to a service container.
 
 | Policy | Capabilities | Held by |
 |---|---|---|
-| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`; `update` on `auth/token/create/sso-broker`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
+| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`; `update` on `auth/token/create/sso-broker`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
 | `sso-admin` | read/write/list all of `secret/*` | admin UI sessions (minted by the broker) |
 | `proxy` | read `secret/proxy/conf` | proxy (`PROXY_VAULT_TOKEN`) |
 | `jump-host` | read `secret/jump-host/conf` | jump host (`JUMP_VAULT_TOKEN`) |
@@ -150,6 +150,31 @@ const data = await baoConf.get('apps/my-service/conf'); // secret/data/apps/my-s
 await baoConf.set('apps/my-service/conf', { db_password: '...' });
 ```
 
+## Plugin secrets
+
+The SSO Manager's plugin system (configurable plugin instances you create,
+edit, load/unload, and run from the **Plugins** page) stores each instance's
+secrets in its own OpenBao namespace, `secret/plugins/<instance-id>/conf`,
+rather than in the static `sso-secrets.js` `discovery.plugins` block. The
+SSO reads and writes these server-side through the `sso-broker` token (the
+plugin runs in-process as a BullMQ worker, so it needs no token of its own),
+and the admin UI only ever sees masked (`********`) values.
+
+- A **plugin type** is a module under `nodejs/plugins/<category>/<type>.js`
+  exporting a manifest (`configSchema` declares which fields are `secret`).
+- A **plugin instance** is a configured, loadable/unloadable copy of a type,
+  tracked in the `PluginInstance` table; you can have multiple instances of the
+  same type (e.g. two Proxmox endpoints with their own tokens).
+- Non-secret config lives in the DB row; only the `secret:true` field values
+  live in `secret/plugins/<instance-id>/conf`.
+
+Deleting an instance removes both the DB row and its `secret/plugins/<id>/*`
+namespace. Legacy `discovery.plugins` entries in `sso-secrets.js` are migrated
+to instances automatically on the first boot of SSO Manager ≥ v1.17.0 (the
+secret fields are copied into OpenBao at that point). See the SSO Manager
+[plugins docs](https://theta42.github.io/sso-manager-node/plugins.html) for the
+UI/API reference.
+
 ## Operator rotation
 
 If a secret is exposed (or just on a routine schedule), rotate it at the
@@ -192,4 +217,5 @@ re-mint the per-app tokens.
   git-destructive operation you can opt into.
 - **Per-app secrets beyond boot config** (e.g. the proxy's DNS-provider creds,
   the jump host's per-user LDAP SSH keys) moving into OpenBao — only the
-  boot-critical `*-secrets.js` contents moved in this phase.
+  boot-critical `*-secrets.js` contents moved in this phase. (Plugin instance
+  secrets *are* in OpenBao, at `secret/plugins/<id>/conf` — see above.)

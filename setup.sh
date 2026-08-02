@@ -769,7 +769,9 @@ seed_app_conf() {
 info "Configuring OpenBao policies..."
 # sso-broker — sso's authority to read/write its own conf, mint per-user and
 # per-app tokens (auth/token/create/sso-broker), and create the matching
-# user-<uid> / app-<name> / sso-admin policies.
+# user-<uid> / app-<name> / sso-admin policies. secret/plugins/* holds per-instance
+# plugin secrets managed by the SSO plugin system (configurable plugin copies,
+# loaded/unloaded at runtime — see sso-manager-node docs/plugins.md).
 ensure_policy sso-broker <<'HCL'
 path "secret/data/sso-manager/conf" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/sso-manager/conf" { capabilities = ["list", "read", "delete"] }
@@ -777,6 +779,8 @@ path "secret/data/users/*" { capabilities = ["create", "read", "update", "delete
 path "secret/metadata/users/*" { capabilities = ["list", "read", "delete"] }
 path "secret/data/apps/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/apps/*" { capabilities = ["list", "read", "delete"] }
+path "secret/data/plugins/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/plugins/*" { capabilities = ["list", "read", "delete"] }
 path "auth/token/create/sso-broker" { capabilities = ["update"] }
 path "sys/policies/acl/user-*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "sys/policies/acl/app-*" { capabilities = ["create", "read", "update", "delete", "list"] }
