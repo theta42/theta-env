@@ -1052,7 +1052,7 @@ echo "  Jump host (web):    https://${JUMP_HOST:-jump.${SSO_HOST#sso.}}   (audit
 echo
 echo "  First admin login credentials are in ./config/sso-secrets.js:"
 echo "    user: ${ADMIN_UID}"
-echo "    pass: bootstrap.adminPass"
+echo "    pass: ${CFG_ADMIN_PASS}"
 echo
 echo "  Proxy local admin (anti-lockout fallback if the SSO is unreachable):"
 echo "    user: proxyadmin2"

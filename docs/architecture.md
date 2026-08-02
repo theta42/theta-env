@@ -253,4 +253,22 @@ clone). Quick LDAP backup:
 docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf -b "<base>" > backup.ldif
 ```
 
+---
+
+## Plugin Ecosystem
+
+The SSO Manager utilizes a dynamic plugin registry (`nodejs/services/plugin_registry.js`) that automatically loads any `.js` file placed in the `nodejs/plugins/<category>` folders.
+
+### Discovery Plugins
+Discovery plugins (e.g., `nmap.js`, `proxmox.js`, `docker.js`) run on a defined cron schedule to sync external assets into the centralized directory catalog.
+
+### Messaging Plugins
+Messaging plugins (e.g., `twilio.js`, `webhook.js`) provide on-demand delivery capabilities for alerts, 2FA tokens, and notifications. 
+- **Universal REST Webhook:** Sends custom JSON payloads to platforms like Slack, Teams, or custom API endpoints securely.
+  - *Discord Example:* To send alerts to a Discord channel, create a new plugin instance of type "Universal REST Webhook". Set the **Webhook URL** to your Discord webhook URL (e.g., `https://discord.com/api/webhooks/...`), the **HTTP Method** to `POST`, and the **Payload Template** to `{"content": "Alert for {{to}}: {{message}}"}`. Leave the Headers and API Secret blank.
+- **Twilio SMS:** Sends standard SMS codes.
+- **Fallback:** If no messaging plugins are enabled, the system falls back to the legacy `voipms` integration configured in the SSO secrets.
+
+Secrets belonging to plugins are automatically pushed to OpenBao (`secret/plugins/<id>/conf`) and are never written to the local database, following the global secrets architecture.
+
 [← Back to Home](index.html)

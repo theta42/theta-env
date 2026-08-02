@@ -1,0 +1,8 @@
+{
+  "name": "theta-env-integration-tests",
+  "version": "1.0.0",
+  "description": "Automated integration tests for theta-env projects",
+  "scripts": {
+    "test": "NODE_TLS_REJECT_UNAUTHORIZED=0 node --test *.test.js"
+  }
+}
