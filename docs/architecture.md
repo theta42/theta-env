@@ -99,7 +99,7 @@ the paths it needs:
 
 | Service | env var | Policy | Access |
 |---------|---------|--------|--------|
-| sso-manager | `SSO_VAULT_TOKEN` | `sso-broker` | `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`; also mints per-user + per-app tokens |
+| sso-manager | `SSO_VAULT_TOKEN` | `sso-broker` | `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`; also mints per-user + per-app tokens |
 | proxy | `PROXY_VAULT_TOKEN` | `proxy` | `secret/proxy/conf` (read) |
 | jump-host | `JUMP_VAULT_TOKEN` | `jump-host` | `secret/jump-host/conf` (read) |
 
