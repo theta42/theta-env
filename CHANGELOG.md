@@ -1,8 +1,3 @@
-# v1.31.0
-- feat: Integrate full suite CI/CD
-- feat: Update plugins ecosystem documentation
-- chore: Bump all submodules to latest tags
-
 # Changelog
 
 All notable changes to this project are documented here. Format loosely
@@ -12,6 +7,32 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 ([proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
+
+## [v1.34.0] - 2026-08-02
+
+### Added
+- **theta-agent**: Added the agent submodule and C2 WebSocket endpoint integrations to the suite.
+- **PKI Certificates**: Integrated PKI certificate generation and management capabilities.
+
+### Changed
+- **Submodules bumped**:
+  - `sso-manager-node` updated to `v1.19.2` (Includes Discovery graph merge fix).
+  - `proxy` updated to `v1.14.1` (Removed invalid documentation copy from Dockerfile).
+  - `jump-host` updated to `v1.16.1`.
+- **`setup.sh`**: Added robust `|| true` fallback to Redis `LASTSAVE` and `CONFIG GET` commands to gracefully bypass snapshoting if the target container is in a crash-loop.
+- **Docs**: Removed all standalone deployment documentation to officially deprecate standalone mode.
+- **CI/CD**: Removed redundant submodule unit test jobs from the main orchestration pipeline.
+
+## [v1.33.0] - 2026-08-02
+
+### Changed
+- **Submodules bumped** for OpenBao secret integration.
+
+## [v1.32.0] - 2026-08-01
+
+### Added
+- **CI/CD**: Added robust GitHub Actions CI/CD workflows for the suite.
+- **Docs**: Updated plugin ecosystem documentation.
 
 ## [v1.31.1] - 2026-08-01
 
