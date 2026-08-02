@@ -1,3 +1,8 @@
+# v1.31.0
+- feat: Integrate full suite CI/CD
+- feat: Update plugins ecosystem documentation
+- chore: Bump all submodules to latest tags
+
 # Changelog
 
 All notable changes to this project are documented here. Format loosely
