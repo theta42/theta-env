@@ -426,12 +426,16 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		macAddress: HOST_FACTS.mac,
 		os: HOST_FACTS.os,
 		kernel: HOST_FACTS.kernel,
+		sshPort: 22,
 	}, ['stack-host']);
 	await ensure('service', 'SSO Manager', 'sso-manager', host.id, {
 		address: `https://${SSO_HOST}`,
 		port: 3001,
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'web',
+		icon: 'mdi:shield-account',
+		tagline: 'Home-lab identity and access management.',
+		requestable: false,
 	});
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
 	// in the stack actually flows through (80/443). Two faces, two entries.
@@ -440,6 +444,9 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'web',
+		icon: 'mdi:server-network',
+		tagline: 'Reverse proxy and API gateway.',
+		requestable: false,
 	});
 	// OpenLDAP is independently consumed — Linux hosts authenticate against it
 	// (PAM/SSSD, sudoRole, sshPublicKey) and LDAP-native apps bind directly
@@ -451,8 +458,12 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		address: `ldaps://${LDAPS_HOST}:636`,
 		port: 389,
 		externalPort: 636,
+		portMappings: [{ proto: 'tcp', external: 636, internal: 389, comment: 'LDAPS' }],
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'openldap',
+		icon: 'mdi:book-open-outline',
+		tagline: 'LDAP directory for identity.',
+		requestable: false,
 	});
 	// Wildcard address: OpenResty fronts every host under the domain (same
 	// */** wildcard convention the proxy's Host records use). Its config lives
@@ -462,6 +473,9 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 443,
 		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'openresty',
+		icon: 'mdi:router-network',
+		tagline: 'Data plane.',
+		requestable: false,
 	});
 
 	// SSH jump host service (core component — always registered).
@@ -473,6 +487,9 @@ async function seedDirectory(token, clientId, jumpClientId) {
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
 			subType: 'ssh',
+			icon: 'mdi:ssh',
+			tagline: 'Secure SSH jump host.',
+			requestable: false,
 		});
 	}
 
