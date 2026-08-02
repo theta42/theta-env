@@ -795,6 +795,7 @@ HCL
 ensure_policy sso-admin <<'HCL'
 path "secret/data/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata" { capabilities = ["list", "read", "delete"] }
+path "secret/metadata/" { capabilities = ["list", "read", "delete"] }
 path "secret/metadata/*" { capabilities = ["list", "read", "delete"] }
 HCL
 # proxy / jump-host — read only their own boot conf.

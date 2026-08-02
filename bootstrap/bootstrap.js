@@ -573,7 +573,6 @@ function writeJumpSecrets(apiToken, oidc, localAdminPass) {
 // sshPublicKey attribute (key injection); for a hardened deployment use a
 // scoped account with an sshPublicKey write-ACL instead (see jump-host README).
 module.exports = {
-\tname: ${JSON.stringify(sso.name || 'SSO Manager')},
 \tldap: {
 \t\t// ldaps:// (636), not ldap:// (389): @simpleworkjs/ldap's client always
 \t\t// sets tlsOptions (see jump-host's models/user_ldap.js), and ldapts
