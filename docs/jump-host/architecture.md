@@ -60,24 +60,21 @@ is refused unless explicitly allowed.
 > [Directory & Inventory](https://theta42.github.io/sso-manager-node/directory.html)
 > docs), which is exactly what this authorization reads.
 
-## 3. Per-user key injection {#per-user-key-injection}
+## 3. Upstream Authentication (PKI or LDAP Keys) {#upstream-authentication}
 
-The jump host holds **one** keypair. To connect downstream *as the user*
-without asking them for anything, it must present a key the downstream `sshd`
-will accept for that user. Downstream hosts (joined via
-[ldap-client](https://github.com/theta42/ldap-client)) serve authorized keys
-straight from LDAP via `AuthorizedKeysCommand`. So on a user's first connection,
-the jump host appends its own public key to that user's `sshPublicKey` attribute
-in LDAP — comment-marked so it's recognizable — then connects downstream with
-its private key.
+To connect downstream *as the user* without asking them for a password, the jump host uses one of two methods (configured in `conf.ssh`):
 
-- Idempotent: the key is added once; a redis flag skips the LDAP round-trip
-  afterwards.
-- The jump host's bind account therefore needs **write access to the
-  `sshPublicKey` attribute** on user entries (an OpenLDAP ACL — see the README).
-  In the bundled theta-env deployment this is handled for you.
-- Because the marker key is excluded from inbound auth (step 1), it grants only
-  the jump host's onward path, never inbound impersonation.
+**Option A: PKI Certificates (Recommended)**
+The jump host securely calls the OpenBao (Vault) SSH Secrets Engine API to request a short-lived (e.g. 5-minute), signed SSH certificate for the target user. 
+- **Zero Touch on Target:** The target host simply trusts the OpenBao CA (`TrustedUserCAKeys /etc/ssh/ca.pub`). No public keys are synced or managed.
+- **Ephemeral:** The certificate expires automatically.
+- **Transparent:** The jump host passes `cert: signedCert` to `ssh2.Client`, authenticating instantly.
+
+**Option B: Legacy LDAP Key Injection**
+If PKI is not configured, the jump host falls back to its legacy method: it holds **one** keypair. On a user's first connection, the jump host appends its own public key to that user's `sshPublicKey` attribute in LDAP (comment-marked) so the downstream host's `AuthorizedKeysCommand` will accept it, then connects with its private key.
+- Idempotent: the key is added once; a redis flag skips the LDAP round-trip afterwards.
+- The jump host's bind account needs **write access** to the `sshPublicKey` attribute.
+- Because the marker key is excluded from inbound auth (step 1), it grants only the jump host's onward path.
 
 ## 4. Bridging
 
