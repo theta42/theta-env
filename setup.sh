@@ -617,7 +617,7 @@ backup_before_rebuild() {
 		docker exec "$svc" redis-cli BGSAVE >/dev/null 2>&1 || true
 		ok=0
 		for i in $(seq 1 10); do
-			if [[ "$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9')" -gt "$before" ]]; then
+			if [[ "$(docker exec "$svc" redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || echo 0)" -gt "$before" ]]; then
 				ok=1; break
 			fi
 			sleep 1
@@ -629,8 +629,8 @@ backup_before_rebuild() {
 		fi
 		# Redis writes dump.rdb to `dir`/`dbfilename`; ask it where that is so the
 		# copy works across the unified (/data) and standalone (/app) layouts.
-		rdir="$(docker exec "$svc" redis-cli CONFIG GET dir 2>/dev/null | sed -n '2p' | tr -d '\r\n')"
-		rfile="$(docker exec "$svc" redis-cli CONFIG GET dbfilename 2>/dev/null | sed -n '2p' | tr -d '\r\n')"
+		rdir="$(docker exec "$svc" redis-cli CONFIG GET dir 2>/dev/null | sed -n '2p' | tr -d '\r\n' || true)"
+		rfile="$(docker exec "$svc" redis-cli CONFIG GET dbfilename 2>/dev/null | sed -n '2p' | tr -d '\r\n' || true)"
 		rpath="${rdir:+$rdir/}${rfile:-dump.rdb}"
 		if [[ "$ok" == "1" ]] && docker cp "$svc:$rpath" "$dir/$svc.rdb" >/dev/null 2>&1; then
 			info "  Redis ($svc) -> $svc.rdb"
