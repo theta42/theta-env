@@ -775,6 +775,8 @@ info "Configuring OpenBao policies..."
 ensure_policy sso-broker <<'HCL'
 path "secret/data/sso-manager/conf" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/sso-manager/conf" { capabilities = ["list", "read", "delete"] }
+path "secret/data/proxy/conf" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/proxy/conf" { capabilities = ["list", "read", "delete"] }
 path "secret/data/users/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/users/*" { capabilities = ["list", "read", "delete"] }
 path "secret/data/apps/*" { capabilities = ["create", "read", "update", "delete", "list"] }
@@ -798,6 +800,8 @@ HCL
 # proxy / jump-host — read only their own boot conf.
 ensure_policy proxy <<'HCL'
 path "secret/data/proxy/conf" { capabilities = ["read"] }
+path "secret/data/proxy/dns-providers/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/proxy/dns-providers/*" { capabilities = ["list", "read", "delete"] }
 path "secret/metadata/proxy/conf" { capabilities = ["read", "list"] }
 HCL
 ensure_policy jump-host <<'HCL'
