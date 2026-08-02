@@ -1546,3 +1546,7 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 [1.1.2]: https://github.com/theta42/theta-suite/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/theta42/theta-suite/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/theta42/theta-suite/releases/tag/v1.1.0
+
+## [1.34.4] - 2026-08-02
+### Changed
+- Updated `sso-manager-node` submodule to `v1.19.6` to pull in a fix for the Vault API 403 error on the Secrets List.
