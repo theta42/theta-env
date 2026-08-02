@@ -1044,7 +1044,7 @@ echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
 
 # ── 8. Summary ───────────────────────────────────────────────────────────────
 echo
-info "\033[1;32mDone. Your SSO + proxy stack is up.\033[0m"
+echo -e "\033[1;34m[setup]\033[0m \033[1;32mDone. Your SSO + proxy stack is up.\033[0m"
 echo
 echo "  SSO Manager UI:    https://${SSO_HOST}   (fronted by the proxy under TLS)"
 echo "                      first-run fallback: http://127.0.0.1:${SSO_PORT:-3001}"
@@ -1056,7 +1056,7 @@ echo "  Jump host (web):    https://${JUMP_HOST:-jump.${SSO_HOST#sso.}}   (audit
 echo
 echo "  First admin login credentials are in ./config/sso-secrets.js:"
 echo "    user: ${ADMIN_UID}"
-echo "    pass: ${CFG_ADMIN_PASS}"
+echo "    pass: ${CFG_ADMIN_PASS:-<see ./config/sso-secrets.js>}"
 echo
 echo "  Proxy local admin (anti-lockout fallback if the SSO is unreachable):"
 echo "    user: proxyadmin2"
