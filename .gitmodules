@@ -11,3 +11,6 @@
 [submodule "ldap-client"]
 	path = ldap-client
 	url = https://github.com/theta42/ldap-client.git
+[submodule "theta-agent"]
+	path = theta-agent
+	url = https://github.com/theta42/theta-agent.git

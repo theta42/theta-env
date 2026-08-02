@@ -76,7 +76,7 @@ cp setup.env.example setup.env     # then edit setup.env: set CFG_DOMAIN to your
 
 You need **Docker** + **Docker Compose**. `./setup.sh` is idempotent — re-run
 any time to converge the stack to `./config/`. For the full config reference,
-architecture, and running each project standalone, see the
+architecture, see the
 **[GitHub repository](https://github.com/theta42/theta-suite)**.
 
 ## Related projects

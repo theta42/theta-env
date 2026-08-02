@@ -183,7 +183,6 @@ docker compose exec sso-manager slapcat -f /etc/openldap/slapd.conf \
   under **API Tokens** in each UI, mint a personal access token and use it as
   `Authorization: Bearer sso_…` (SSO) or `prx_…` (proxy). A token authenticates as
   its creator with their permissions. See each submodule's DEPLOYMENT.
-- See [Architecture](architecture.html) for how it all fits together, and
-  [Standalone](standalone.html) to run either project on its own.
+- See [Architecture](architecture.html) for how it all fits together.
 
 [← Back to Home](index.html)
