@@ -443,6 +443,7 @@ BAOEOF
 	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
 	CFG_SVC_PASS="${CFG_SVC_PASS:-}"
 	CFG_PROXY_ADMIN_PASS="${CFG_PROXY_ADMIN_PASS:-}"
+	CFG_CREATE_ALL_HTTP="${CFG_CREATE_ALL_HTTP:-0}"
 
 	# ── One-time migration from .env / proxy.env (existing deployments) ──
 	# Preserve the operator's existing secrets so the running deployment keeps
@@ -977,7 +978,7 @@ async function ensureHost(host, ip, targetPort) {
 			host: host,
 			ip: ip,
 			targetPort: targetPort,
-			forcessl: true,
+			forcessl: $( [[ "$CFG_CREATE_ALL_HTTP" == "1" ]] && echo false || echo true ),
 			targetssl: false,
 			sso_enabled: false,
 			created_by: 'setup.sh',
@@ -1034,7 +1035,7 @@ const {Host} = require('/app/models').models;
 		try { await Host.get($(js_str "$JUMP_HOST")); console.log('SKIP ${JUMP_HOST} (already exists)'); }
 		catch (e) {
 			if (e.name !== 'EntryNotFound') throw e;
-			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'jump-host', targetPort: 3002, forcessl: true, targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
+			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'jump-host', targetPort: 3002, forcessl: $( [[ "$CFG_CREATE_ALL_HTTP" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
 			console.log('CREATED ${JUMP_HOST} -> jump-host:3002');
 		}
 		process.exit(0);
@@ -1043,6 +1044,52 @@ const {Host} = require('/app/models').models;
 NODEEOF
 )
 echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
+
+# ── 7c. Install theta-agent on the host ──────────────────────────────────────
+info "Setting up theta-agent on the host..."
+(
+	cd theta-agent || exit 0
+	if ! command -v go >/dev/null 2>&1; then
+		warn "Go is not installed. Skipping theta-agent installation."
+	else
+		info "  Building theta-agent..."
+		go build -o theta-agent main.go websocket.go config.go || warn "  Failed to build theta-agent."
+		if [[ -x "theta-agent" ]]; then
+			sudo mkdir -p /etc/theta
+			if [[ ! -f /etc/theta/agent.yml ]]; then
+				sudo cp agent.yml.example /etc/theta/agent.yml
+				AGENT_TOKEN="$(rand_hex 16)"
+				sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta/agent.yml
+				# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
+				if [[ "$CFG_CREATE_ALL_HTTP" == "1" ]]; then
+					sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta/agent.yml
+				else
+					sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta/agent.yml
+				fi
+			fi
+			sudo cp theta-agent /usr/local/bin/theta-agent
+			sudo chmod +x /usr/local/bin/theta-agent
+			
+			sudo bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
+[Unit]
+Description=Theta Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/theta-agent
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+			sudo systemctl daemon-reload
+			sudo systemctl enable --now theta-agent.service
+			info "  theta-agent installed and started."
+		fi
+	fi
+)
 
 # ── 8. Summary ───────────────────────────────────────────────────────────────
 echo

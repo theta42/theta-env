@@ -1550,3 +1550,8 @@ First tagged release. Establishes the `vX.Y.Z` tag convention going forward.
 ## [1.34.4] - 2026-08-02
 ### Changed
 - Updated `sso-manager-node` submodule to `v1.19.6` to pull in a fix for the Vault API 403 error on the Secrets List.
+
+## [1.34.5] - 2026-08-02
+### Added
+- Automatically build and install `theta-agent` on the host system as a systemd service during `setup.sh`.
+- Added `CFG_CREATE_ALL_HTTP` option to `setup.env` to create all default proxy host entries with `forcessl=false`.
