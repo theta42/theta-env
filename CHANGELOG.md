@@ -8,6 +8,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.1] - 2026-08-03
+
+### Fixed
+- **Directory & Configuration UI enhancements** — Live Cytoscape graph update on parent/child edge modifications, improved discovery reconciler host matching, updated configuration sidebar layout, relocated discovery and messaging plugins to Directory and Configuration pages.
+- **Managed Host Target Filter** — Filter SSH connection targets in Jump Host to managed hosts only.
+
 ## [v1.35.0] - 2026-08-02
 
 ### Added
