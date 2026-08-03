@@ -688,13 +688,37 @@ fi
 
 status_json=$(docker exec openbao bao status -format=json 2>/dev/null || true)
 if echo "$status_json" | grep -q '"sealed": true'; then
-	info "Unsealing openbao..."
-	UNSEAL_KEY=$(grep -A1 '"unseal_keys_b64":' "$CONFIG_DIR/bao-init.json" | tail -n1 | cut -d'"' -f2)
-	docker exec openbao bao operator unseal "$UNSEAL_KEY" >/dev/null
+	UNSEAL_KEY=""
+	if [[ -f "$CONFIG_DIR/bao-init.json" ]]; then
+		UNSEAL_KEY=$(grep -A1 '"unseal_keys_b64":' "$CONFIG_DIR/bao-init.json" 2>/dev/null | tail -n1 | cut -d'"' -f2 || true)
+	fi
+	if [[ -z "$UNSEAL_KEY" ]]; then
+		UNSEAL_KEY="$(env_get VAULT_UNSEAL_KEY)"
+	fi
+
+	if [[ -n "$UNSEAL_KEY" ]]; then
+		info "Unsealing openbao..."
+		docker exec openbao bao operator unseal "$UNSEAL_KEY" >/dev/null
+	else
+		die "OpenBao is sealed, but no unseal key was found in $CONFIG_DIR/bao-init.json or .env (VAULT_UNSEAL_KEY)."
+	fi
 fi
 
 export VAULT_TOKEN
-VAULT_TOKEN=$(grep '"root_token":' "$CONFIG_DIR/bao-init.json" | cut -d'"' -f4)
+if [[ -f "$CONFIG_DIR/bao-init.json" ]]; then
+	VAULT_TOKEN=$(grep '"root_token":' "$CONFIG_DIR/bao-init.json" 2>/dev/null | cut -d'"' -f4 || true)
+fi
+if [[ -z "$VAULT_TOKEN" ]]; then
+	VAULT_TOKEN="$(env_get VAULT_TOKEN)"
+fi
+
+if [[ -z "$VAULT_TOKEN" ]]; then
+	die "Could not determine OpenBao VAULT_TOKEN from $CONFIG_DIR/bao-init.json or .env."
+fi
+
+if [[ -n "$UNSEAL_KEY" ]]; then
+	env_upsert VAULT_UNSEAL_KEY "$UNSEAL_KEY"
+fi
 env_upsert VAULT_TOKEN "$VAULT_TOKEN"
 
 if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets list -format=json 2>/dev/null | grep -q '"secret/":'; then
