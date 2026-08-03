@@ -1046,31 +1046,34 @@ NODEEOF
 echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
 
 # ── 7c. Install theta-agent on the host ──────────────────────────────────────
-info "Setting up theta-agent on the host..."
-(
-	cd theta-agent || exit 0
-	if ! command -v go >/dev/null 2>&1; then
-		warn "Go is not installed. Skipping theta-agent installation."
-	else
-		info "  Building theta-agent..."
-		go build -o theta-agent main.go websocket.go config.go || warn "  Failed to build theta-agent."
-		if [[ -x "theta-agent" ]]; then
-			sudo mkdir -p /etc/theta
-			if [[ ! -f /etc/theta/agent.yml ]]; then
-				sudo cp agent.yml.example /etc/theta/agent.yml
-				AGENT_TOKEN="$(rand_hex 16)"
-				sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta/agent.yml
-				# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
-				if [[ "$CFG_CREATE_ALL_HTTP" == "1" ]]; then
-					sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta/agent.yml
-				else
-					sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta/agent.yml
+# Controlled by CFG_THETA_AGENT_ENABLE (default: 1 = enabled)
+CFG_THETA_AGENT_ENABLE="${CFG_THETA_AGENT_ENABLE:-1}"
+if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
+	info "Setting up theta-agent on the host..."
+	(
+		cd theta-agent || exit 0
+		if ! command -v go >/dev/null 2>&1; then
+			warn "Go is not installed. Skipping theta-agent installation."
+		else
+			info "  Building theta-agent..."
+			go build -o theta-agent main.go websocket.go config.go || warn "  Failed to build theta-agent."
+			if [[ -x "theta-agent" ]]; then
+				sudo mkdir -p /etc/theta
+				if [[ ! -f /etc/theta/agent.yml ]]; then
+					sudo cp agent.yml.example /etc/theta/agent.yml
+					AGENT_TOKEN="$(rand_hex 16)"
+					sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta/agent.yml
+					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
+					if [[ "$CFG_CREATE_ALL_HTTP" == "1" ]]; then
+						sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta/agent.yml
+					else
+						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta/agent.yml
+					fi
 				fi
-			fi
-			sudo cp theta-agent /usr/local/bin/theta-agent
-			sudo chmod +x /usr/local/bin/theta-agent
-			
-			sudo bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
+				sudo cp theta-agent /usr/local/bin/theta-agent
+				sudo chmod +x /usr/local/bin/theta-agent
+
+				sudo bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
 [Unit]
 Description=Theta Agent
 After=network.target
@@ -1084,12 +1087,58 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF"
-			sudo systemctl daemon-reload
-			sudo systemctl enable --now theta-agent.service
-			info "  theta-agent installed and started."
+				sudo systemctl daemon-reload
+				sudo systemctl enable --now theta-agent.service
+				info "  theta-agent installed and started."
+			fi
 		fi
+	)
+else
+	info "theta-agent installation skipped (CFG_THETA_AGENT_ENABLE=0)."
+fi
+# ── 7d. Configure theta-agent integration with this host ─────────────────────
+# Non-interactive configuration driven by setup.env variables:
+#   CFG_THETA_AGENT_ENABLE (default: 1) - Install/configure theta-agent
+#   CFG_THETA_AGENT_LDAP_AUTH (default: 1) - Configure LDAP authentication via ldap-client
+#   CFG_THETA_AGENT_FULL_CONTROL (default: 1) - Enable all agent capabilities
+# Only runs if theta-agent was installed (section 7c) or already exists.
+if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]; then
+	info "Configuring theta-agent integration with this host..."
+
+	# Default to enabled unless explicitly disabled
+	CFG_THETA_AGENT_LDAP_AUTH="${CFG_THETA_AGENT_LDAP_AUTH:-1}"
+	CFG_THETA_AGENT_FULL_CONTROL="${CFG_THETA_AGENT_FULL_CONTROL:-1}"
+
+	if [[ "$CFG_THETA_AGENT_LDAP_AUTH" == "1" ]]; then
+		info "  Configuring LDAP authentication for this host..."
+		(
+			cd ldap-client || exit 0
+			if [[ -x "index.sh" ]]; then
+				bash index.sh --non-interactive 2>/dev/null || warn "  ldap-client enrollment failed (continuing)..."
+			fi
+		)
+	else
+		info "  LDAP authentication configuration skipped (CFG_THETA_AGENT_LDAP_AUTH=0)."
 	fi
-)
+
+	if [[ "$CFG_THETA_AGENT_FULL_CONTROL" == "1" ]]; then
+		info "  Configuring theta-agent with full host control capabilities..."
+		if [[ -f /etc/theta/agent.yml ]]; then
+			sudo sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta/agent.yml
+			sudo sed -i 's/service_control: false/service_control: true/' /etc/theta/agent.yml
+			sudo sed -i 's/reboot: false/reboot: true/' /etc/theta/agent.yml
+			sudo sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta/agent.yml
+			info "  theta-agent full control enabled. Restarting service..."
+			sudo systemctl restart theta-agent.service
+		else
+			warn "  /etc/theta/agent.yml not found. Full control not configured."
+		fi
+	else
+		info "  theta-agent running with limited capabilities (CFG_THETA_AGENT_FULL_CONTROL=0)."
+	fi
+else
+	info "  theta-agent configuration skipped (agent not installed or CFG_THETA_AGENT_ENABLE=0)."
+fi
 
 # ── 8. Summary ───────────────────────────────────────────────────────────────
 echo

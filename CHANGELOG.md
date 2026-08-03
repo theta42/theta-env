@@ -8,6 +8,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.0] - 2026-08-02
+
+### Added
+- **Non-interactive theta-agent configuration** — Added three `setup.env` variables
+  to control theta-agent installation and configuration without interactive prompts:
+  - `CFG_THETA_AGENT_ENABLE` (default: 1) — Enable theta-agent installation
+  - `CFG_THETA_AGENT_LDAP_AUTH` (default: 1) — Configure LDAP authentication via ldap-client
+  - `CFG_THETA_AGENT_FULL_CONTROL` (default: 1) — Enable all agent capabilities
+
+### Changed
+- **`setup.sh`**: Made theta-agent setup fully non-interactive, driven by `setup.env`
+  variables. Defaults preserve existing behavior (all features enabled).
+
 ## [v1.34.0] - 2026-08-02
 
 ### Added
