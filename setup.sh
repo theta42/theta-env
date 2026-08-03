@@ -717,7 +717,22 @@ if echo "$status_json" | grep -q '"sealed": true'; then
 		info "Unsealing openbao..."
 		docker exec openbao bao operator unseal "$UNSEAL_KEY" >/dev/null
 	else
-		die "OpenBao is sealed, but no unseal key was found in $CONFIG_DIR/bao-init.json or .env (VAULT_UNSEAL_KEY)."
+		warn "OpenBao is sealed with an unrecoverable key. Resetting OpenBao volume and re-initializing..."
+		"${COMPOSE[@]}" stop openbao >/dev/null 2>&1 || true
+		"${COMPOSE[@]}" rm -f openbao >/dev/null 2>&1 || true
+		docker volume ls -q 2>/dev/null | grep openbao | xargs -r docker volume rm >/dev/null 2>&1 || true
+		"${COMPOSE[@]}" up -d openbao >/dev/null 2>&1 || true
+		info "Waiting for fresh openbao container..."
+		for i in $(seq 1 30); do
+			if docker exec openbao bao status >/dev/null 2>&1 || [[ $? -eq 2 ]]; then break; fi
+			sleep 2
+		done
+		info "Initializing fresh openbao..."
+		docker exec openbao bao operator init -key-shares=1 -key-threshold=1 -format=json > "$CONFIG_DIR/bao-init.json"
+		chmod 600 "$CONFIG_DIR/bao-init.json"
+		UNSEAL_KEY=$(grep -A1 '"unseal_keys_b64":' "$CONFIG_DIR/bao-init.json" | tail -n1 | cut -d'"' -f2)
+		info "Unsealing fresh openbao..."
+		docker exec openbao bao operator unseal "$UNSEAL_KEY" >/dev/null
 	fi
 fi
 
