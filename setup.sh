@@ -178,6 +178,8 @@ fi
 # resolved in ensure_config; this is only the hostname override.
 [[ -f ./setup.env ]] && parse_kv_file ./setup.env
 export CFG_JUMP_HOST
+CFG_CREATE_ALL_HTTP="${CFG_CREATE_ALL_HTTP:-0}"
+export CFG_CREATE_ALL_HTTP
 
 # ── Optional outbound HTTP(S) proxy for docker build + the running containers ─
 # CFG_HTTP_PROXY / CFG_HTTPS_PROXY / CFG_NO_PROXY (from ./setup.env or the
@@ -978,7 +980,7 @@ async function ensureHost(host, ip, targetPort) {
 			host: host,
 			ip: ip,
 			targetPort: targetPort,
-			forcessl: $( [[ "$CFG_CREATE_ALL_HTTP" == "1" ]] && echo false || echo true ),
+			forcessl: $( [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && echo false || echo true ),
 			targetssl: false,
 			sso_enabled: false,
 			created_by: 'setup.sh',
@@ -1035,7 +1037,7 @@ const {Host} = require('/app/models').models;
 		try { await Host.get($(js_str "$JUMP_HOST")); console.log('SKIP ${JUMP_HOST} (already exists)'); }
 		catch (e) {
 			if (e.name !== 'EntryNotFound') throw e;
-			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'jump-host', targetPort: 3002, forcessl: $( [[ "$CFG_CREATE_ALL_HTTP" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
+			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'jump-host', targetPort: 3002, forcessl: $( [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
 			console.log('CREATED ${JUMP_HOST} -> jump-host:3002');
 		}
 		process.exit(0);
@@ -1064,7 +1066,7 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 					AGENT_TOKEN="$(rand_hex 16)"
 					sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta/agent.yml
 					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
-					if [[ "$CFG_CREATE_ALL_HTTP" == "1" ]]; then
+					if [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]]; then
 						sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta/agent.yml
 					else
 						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta/agent.yml

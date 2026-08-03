@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.2] - 2026-08-03
+
+### Fixed
+- **Unbound `CFG_CREATE_ALL_HTTP` variable in `setup.sh`** — Fixed unbound variable error during host registration in `setup.sh` when `ensure_secrets_files()` is skipped on pre-configured installations.
+
 ## [v1.35.1] - 2026-08-03
 
 ### Fixed
