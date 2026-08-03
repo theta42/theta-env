@@ -106,6 +106,13 @@ env_upsert() {
 	fi
 }
 
+# Read KEY= from ./.env (empty if absent)
+env_get() {
+	local key="$1" file=./.env
+	[[ -f "$file" ]] || return 0
+	grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || true
+}
+
 # Detect docker compose (v2 plugin `docker compose` or v1 standalone `docker-compose`).
 if docker compose version >/dev/null 2>&1; then
 	COMPOSE=(docker compose)
@@ -748,21 +755,6 @@ ensure_policy() {
 	docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao policy write "$name" - >/dev/null
 }
 
-# Read KEY= from ./.env (empty if absent) — reuse a previously minted token
-# instead of minting a fresh one on every setup.sh run.
-env_get() {
-	local key="$1" file=./.env
-	[[ -f "$file" ]] || return 0
-	# `|| true` is load-bearing: under `set -euo pipefail`, a no-match `grep`
-	# exits 1 and (pipefail) makes the whole pipeline return 1. Callers do
-	# `existing="$(env_get ...)"` as a bare assignment — a non-zero return there
-	# trips `set -e` and silently kills the whole script (this is exactly what
-	# aborted a fresh install right after "Minting per-app OpenBao tokens": the
-	# root VAULT_TOKEN env_upsert had already created .env, but the app-token
-	# keys were absent, so the first env_get returned 1). "Key absent" is the
-	# normal path here, so always return 0 with empty output.
-	grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || true
-}
 
 # Mint an orphan, renewable token for `policy` and persist it to .env as `key`,
 # OR reuse the token already in .env if it is still valid (re-mint on expiry).
