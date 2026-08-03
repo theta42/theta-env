@@ -423,10 +423,12 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	const host = await ensure('host', HOST_FACTS.name || 'Stack host', hostSlug, site.id, {
 		subType: 'linux',
 		ip: HOST_FACTS.ip,
+		address: HOST_FACTS.ip,
 		macAddress: HOST_FACTS.mac,
 		os: HOST_FACTS.os,
 		kernel: HOST_FACTS.kernel,
 		sshPort: 22,
+		managed: true,
 	}, ['stack-host']);
 	await ensure('service', 'SSO Manager', 'sso-manager', host.id, {
 		address: `https://${SSO_HOST}`,
