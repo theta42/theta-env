@@ -683,6 +683,16 @@ for i in $(seq 1 30); do
 	sleep 2
 done
 
+# If config/bao-init.json is missing, search backups for a saved copy
+if [[ ! -f "$CONFIG_DIR/bao-init.json" ]]; then
+    latest_backup_init=$(find ./backups -name "bao-init.json" 2>/dev/null | sort -r | head -n1 || true)
+    if [[ -n "$latest_backup_init" && -f "$latest_backup_init" ]]; then
+        info "Restoring $CONFIG_DIR/bao-init.json from backup ($latest_backup_init)..."
+        cp "$latest_backup_init" "$CONFIG_DIR/bao-init.json"
+        chmod 600 "$CONFIG_DIR/bao-init.json"
+    fi
+fi
+
 if ! docker exec openbao bao status -format=json 2>/dev/null | grep -q '"initialized": true'; then
     status_json=$(docker exec openbao bao status -format=json 2>/dev/null || true)
     if ! echo "$status_json" | grep -q '"initialized": true'; then
