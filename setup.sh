@@ -674,7 +674,7 @@ for i in $(seq 1 30); do
 	sleep 2
 done
 
-if ! docker exec openbao bao status -format=json 2>/dev/null | grep -q '"initialized": true' || true; then
+if ! docker exec openbao bao status -format=json 2>/dev/null | grep -q '"initialized": true'; then
     status_json=$(docker exec openbao bao status -format=json 2>/dev/null || true)
     if ! echo "$status_json" | grep -q '"initialized": true'; then
         info "Initializing openbao for the first time..."
@@ -1125,7 +1125,7 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 		info "  Configuring theta-agent with full host control capabilities..."
 		if [[ -f /etc/theta/agent.yml ]]; then
 			sudo sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta/agent.yml
-			sudo sed -i 's/service_control: false/service_control: true/' /etc/theta/agent.yml
+			sudo sed -i 's/service_control: .*/service_control: true/' /etc/theta/agent.yml
 			sudo sed -i 's/reboot: false/reboot: true/' /etc/theta/agent.yml
 			sudo sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta/agent.yml
 			info "  theta-agent full control enabled. Restarting service..."
