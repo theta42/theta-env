@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.18] - 2026-08-04
+
+### Changed
+- **Sync proxy + jump-host gitlinks to their version-tagged commits** — proxy v1.33.0 and jump-host v1.18.0 bumped their package.json to match their tags; this release picks up those corrected gitlinks so a fresh deploy reports the matching versions.
+
 ## [v1.35.17] - 2026-08-04
 
 ### Added
