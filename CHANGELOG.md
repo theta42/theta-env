@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.15] - 2026-08-04
+
+### Fixed
+- **theta-agent re-install failed with "Text file busy"** — setup.sh copied the prebuilt binary over a running agent service, which cp refuses. It now stops the service before copying.
+
 ## [v1.35.14] - 2026-08-04
 
 ### Fixed

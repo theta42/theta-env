@@ -1213,6 +1213,9 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta42/agent.yml
 					fi
 				fi
+				# Stop a running agent before overwriting its binary (cp into a
+				# running executable fails with "Text file busy" on a re-install).
+				sudo systemctl stop theta-agent.service 2>/dev/null || true
 				sudo cp theta-agent-linux-amd64 /usr/local/bin/theta-agent
 				sudo chmod +x /usr/local/bin/theta-agent
 
