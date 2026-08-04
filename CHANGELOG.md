@@ -8,6 +8,15 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.10] - 2026-08-04
+
+### Added
+- **`--reset-openbao`** — full clean OpenBao reset for clearing stale policies/tokens (re-inits the store, flushes the Redis vault-token cache). Use when the vault UI shows a recurring `403 permission denied` on the secrets list.
+- **sso v1.21.0** — shared secrets: users publish secrets to `secret/shared/<owner>/<slug>` and grant read access to other users and apps; plus a durable fix for the recurring vault 403 (broker now always reconciles policy content before serving a cached token). Bumped the sso-manager-node submodule gitlink to v1.21.0.
+
+### Fixed
+- **theta-agent was never installed** — `setup.sh` tried to `go build` from an incomplete source-file list (omitting `executor.go`/`telemetry.go`), which failed silently and skipped install. It now installs the prebuilt `theta-agent-linux-amd64` binary from the submodule and writes config to `/etc/theta42/agent.yml` (the path the agent actually reads).
+
 ## [v1.35.9] - 2026-08-03
 
 ### Fixed

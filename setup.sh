@@ -72,6 +72,19 @@ warn()  { printf '\033[1;33m[setup]\033[0m %s\n' "$*" >&2; }
 error() { printf '\033[1;31m[setup]\033[0m %s\n' "$*" >&2; }
 die()   { error "$*"; exit 1; }
 
+# ── Flags ──────────────────────────────────────────────────────────────────────
+# --reset-openbao: wipe the OpenBao volume + bao-init.json and re-initialize a
+# fresh store (no prod data to preserve). Use when OpenBao state is suspect
+# (stale policies/tokens causing vault 403s). The Redis vault-token cache is
+# flushed once sso-manager is back up (see the OpenBao bootstrap section).
+RESET_OPENBAO=0
+for arg in "$@"; do
+	case "$arg" in
+		--reset-openbao) RESET_OPENBAO=1 ;;
+		*) warn "unknown argument: $arg (ignored)" ;;
+	esac
+done
+
 # Escape a value for a single-quoted JS string: \ -> \\, ' -> \', then wrap in '...'.
 js_str() {
 	local s="$1"
@@ -671,6 +684,20 @@ backup_before_rebuild() {
 backup_before_rebuild
 
 # ── 3b. Setup OpenBao (Vault) ────────────────────────────────────────────────
+# Full reset (--reset-openbao): stop/remove openbao, drop the data volume, and
+# delete the init/keys file (incl. any backup copy that setup.sh would otherwise
+# restore). The normal bootstrap below then initializes a brand-new store, so no
+# stale policy content or token survives.
+if [[ "$RESET_OPENBAO" == "1" ]]; then
+	info "── Full OpenBao reset requested (--reset-openbao) ──"
+	"${COMPOSE[@]}" stop openbao >/dev/null 2>&1 || true
+	"${COMPOSE[@]}" rm -f openbao >/dev/null 2>&1 || true
+	docker volume ls -q 2>/dev/null | grep '^openbao' | xargs -r docker volume rm >/dev/null 2>&1 || true
+	rm -f "$CONFIG_DIR/bao-init.json"
+	rm -f ./backups/bao-init.json ./backups/*/bao-init.json 2>/dev/null || true
+	info "  openbao volume + bao-init.json cleared; will re-initialize fresh."
+fi
+
 info "Starting openbao..."
 "${COMPOSE[@]}" run --rm --user root openbao chown -R 100:1000 /vault/data
 "${COMPOSE[@]}" up -d openbao
@@ -901,6 +928,18 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
+# After a full OpenBao reset, the Redis-cached per-user/admin vault tokens (in
+# the persisted sso-data volume) reference the old, now-wiped store — drop them
+# so the broker re-mints fresh tokens against the new instance. Belt-and-
+# suspenders: the broker also always reconciles policy content before serving a
+# token, but a token minted by the previous OpenBao instance is simply invalid
+# there, so a cache flush is required after a reset.
+if [[ "$RESET_OPENBAO" == "1" ]]; then
+	info "  clearing cached vault tokens (old OpenBao instance)..."
+	docker exec sso-manager sh -c "redis-cli EVAL \"for _,k in ipairs(redis.call('keys','vault_token:*')) do redis.call('del',k) end\" 0" \
+		>/dev/null 2>&1 || warn "  could not flush Redis vault-token cache (will re-mint on next access)"
+fi
+
 info "Seeding app configs into OpenBao (idempotent)..."
 # sso-manager/conf holds the operator-set LDAP/SMTP/jwtSecret values — sso has
 # no bootstrap-generated creds, so the file is the complete source of truth.
@@ -1095,25 +1134,30 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 	info "Setting up theta-agent on the host..."
 	(
 		cd theta-agent || exit 0
-		if ! command -v go >/dev/null 2>&1; then
-			warn "Go is not installed. Skipping theta-agent installation."
+		# Install the prebuilt binary that ships in the theta-agent submodule (the
+		# repo's own install.sh uses the same release binary). We do NOT build from
+		# source here: a previous `go build -o theta-agent main.go websocket.go
+		# config.go` omitted executor.go/telemetry.go, failed to compile, and was
+		# silently skipped, so the agent was never installed.
+		if [[ ! -f "theta-agent-linux-amd64" ]]; then
+			warn "Prebuilt theta-agent-linux-amd64 missing from the theta-agent submodule. Skipping theta-agent installation."
 		else
-			info "  Building theta-agent..."
-			go build -o theta-agent main.go websocket.go config.go || warn "  Failed to build theta-agent."
-			if [[ -x "theta-agent" ]]; then
-				sudo mkdir -p /etc/theta
-				if [[ ! -f /etc/theta/agent.yml ]]; then
-					sudo cp agent.yml.example /etc/theta/agent.yml
+			info "  Installing prebuilt theta-agent binary..."
+			if [[ -x "theta-agent-linux-amd64" ]]; then
+				# The agent binary reads /etc/theta42/agent.yml (theta-agent/main.go).
+				sudo mkdir -p /etc/theta42
+				if [[ ! -f /etc/theta42/agent.yml ]]; then
+					sudo cp agent.yml.example /etc/theta42/agent.yml
 					AGENT_TOKEN="$(rand_hex 16)"
-					sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta/agent.yml
+					sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta42/agent.yml
 					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
 					if [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]]; then
-						sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta/agent.yml
+						sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta42/agent.yml
 					else
-						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta/agent.yml
+						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta42/agent.yml
 					fi
 				fi
-				sudo cp theta-agent /usr/local/bin/theta-agent
+				sudo cp theta-agent-linux-amd64 /usr/local/bin/theta-agent
 				sudo chmod +x /usr/local/bin/theta-agent
 
 				sudo bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
@@ -1166,15 +1210,15 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 
 	if [[ "$CFG_THETA_AGENT_FULL_CONTROL" == "1" ]]; then
 		info "  Configuring theta-agent with full host control capabilities..."
-		if [[ -f /etc/theta/agent.yml ]]; then
-			sudo sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta/agent.yml
-			sudo sed -i 's/service_control: .*/service_control: true/' /etc/theta/agent.yml
-			sudo sed -i 's/reboot: false/reboot: true/' /etc/theta/agent.yml
-			sudo sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta/agent.yml
+		if [[ -f /etc/theta42/agent.yml ]]; then
+			sudo sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta42/agent.yml
+			sudo sed -i 's/service_control: .*/service_control: true/' /etc/theta42/agent.yml
+			sudo sed -i 's/reboot: false/reboot: true/' /etc/theta42/agent.yml
+			sudo sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta42/agent.yml
 			info "  theta-agent full control enabled. Restarting service..."
 			sudo systemctl restart theta-agent.service
 		else
-			warn "  /etc/theta/agent.yml not found. Full control not configured."
+			warn "  /etc/theta42/agent.yml not found. Full control not configured."
 		fi
 	else
 		info "  theta-agent running with limited capabilities (CFG_THETA_AGENT_FULL_CONTROL=0)."
