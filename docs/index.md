@@ -50,6 +50,10 @@ snapshots state before every rebuild.
 - **Proxy** — add the hosts you want to protect with OIDC login.
 - **LDAPS** for direct binds — Linux hosts (PAM/SSSD, sudo, SSH keys) and
   LDAP-native apps authenticate against the same directory.
+- **Hierarchical groups & permissions** — every adopted host and app gets its own
+  `admin`/`access`/`capability` groups, generated from the Directory; they double
+  as real POSIX groups for sudo/SSH. See
+  [Group & Permission Model](GROUPS.html).
 - **ldap-client** — enroll Linux hosts into the directory (PAM/SSSD login,
   sudo, SSH keys); the host inventory shows up in the SSO UI and drives
   jump-host routing.

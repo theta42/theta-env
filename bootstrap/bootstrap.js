@@ -430,6 +430,31 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		sshPort: 22,
 		managed: true,
 	}, ['stack-host']);
+
+	// theta-proxy and theta-jump are first-class managed host resources (their
+	// names match the OAuth client identities the proxy/jump apps use). They
+	// appear as hosts in the Directory; the per-app services below still carry
+	// the OAuth-client + reachability detail.
+	const jumpHostAddr = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
+	await ensure('host', 'theta-proxy', 'host_theta-proxy', site.id, {
+		subType: 'linux',
+		address: `https://${PROXY_HOST}`,
+		port: 3000,
+		gitRepo: 'https://github.com/theta42/proxy',
+		icon: 'mdi:server-network',
+		tagline: 'Reverse proxy and API gateway (node management UI).',
+		managed: true,
+	});
+	await ensure('host', 'theta-jump', 'host_theta-jump', site.id, {
+		subType: 'ssh',
+		address: jumpHostAddr ? `https://${jumpHostAddr}` : '',
+		port: 3002,
+		gitRepo: 'https://github.com/theta42/jump-host',
+		icon: 'mdi:ssh',
+		tagline: 'Secure SSH jump host.',
+		managed: true,
+	});
+
 	await ensure('service', 'SSO Manager', 'sso-manager', host.id, {
 		address: `https://${SSO_HOST}`,
 		port: 3001,

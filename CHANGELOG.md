@@ -8,6 +8,17 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.17] - 2026-08-04
+
+### Added
+- **Group & Permission Model spec** — canonical documentation of the hierarchical group schema (`god_admin`, `{site}_super_admin`, per-site/per-resource host+app `admin`/`access`/`<capability>` groups, meta `everyone`/`{site}_everyone`), the inheritance resolver, Directory-only group management, multi-site isolation, host-side SSSD GID mapping (groups are `groupOfNames`, no `gidNumber`), downstream-app consumption, and migration from the legacy `app_*` groups. See [GROUPS.md](GROUPS.html).
+- **sso v1.25.0** — the resolver + schema implemented in the SSO (see its changelog); the standalone Groups page removed.
+
+## [v1.35.16] - 2026-08-04
+
+### Added
+- **theta-proxy + theta-jump as first-class managed host resources** — the bootstrap now seeds them as managed `host`-kind resources in the Directory (in addition to the existing stack host and its service entries), so a fresh install shows them as hosts.
+
 ## [v1.35.15] - 2026-08-04
 
 ### Fixed
