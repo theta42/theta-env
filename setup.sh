@@ -292,6 +292,21 @@ dn_from_domain() {
 	echo "dc=$1" | sed 's/\./,dc=/g'
 }
 
+# Read a value from the (operator-owned) ./config/sso-secrets.js -- the source of
+# truth on re-runs, where the CFG_* first-run shell vars are not (re)derived
+# (ensure_config returns early once sso-secrets.js exists). Reads `stack.<key>`.
+# Prints empty on any failure. Usage: sso_secrets_get ldapBaseDn
+sso_secrets_get() {
+	node -e 'const c=require(process.argv[1]);const k=process.argv[2];console.log(c&&c.stack&&c.stack[k]!=null?c.stack[k]:"")' \
+		"$PWD/$CONFIG_DIR/sso-secrets.js" "$1" 2>/dev/null || true
+}
+
+# Read a top-level (non-stack) secret from sso-secrets.js, e.g. serviceAccountPass.
+sso_secrets_get_top() {
+	node -e 'const c=require(process.argv[1]);const k=process.argv[2];console.log(c&&c[k]!=null?c[k]:"")' \
+		"$PWD/$CONFIG_DIR/sso-secrets.js" "$1" 2>/dev/null || true
+}
+
 # Write ./config/sso-secrets.js from the CFG_* shell vars.
 write_sso_secrets() {
 	local dn="$CFG_BASE_DN" domain="$CFG_DOMAIN"
@@ -1265,15 +1280,25 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 		# ldap.vars (cp ldap.vars.template ldap.vars + edit) is always kept.
 		if [[ ! -f ldap-client/ldap.vars ]]; then
 			info "  Generating ldap-client/ldap.vars from the stack config..."
+			# CFG_* first-run vars may be unset on a re-run (ensure_config returns
+			# early once sso-secrets.js exists), so fall back to reading the real
+			# values from the operator-owned sso-secrets.js. All `:-` guarded so a
+			# missing value degrades to an empty ldap.vars field, not a set -u abort.
+			ldap_base_dn="${CFG_BASE_DN:-$(sso_secrets_get ldapBaseDn)}"
+			ldap_site="${CFG_SITE_NAME:-$(sso_secrets_get siteName)}"
+			ldap_bind_pass="${CFG_SVC_PASS:-$(sso_secrets_get_top serviceAccountPass)}"
+			sso_host="${CFG_SSO_HOST:-$(sso_secrets_get ssoHost)}"
+			ldaps_host="${CFG_LDAPS_HOST:-}"
+			[[ -n "$ldaps_host" ]] || ldaps_host="${sso_host:-}"
 			cat > ldap-client/ldap.vars <<LDAPVARS
-export ldap_host="${CFG_LDAPS_HOST:-sso.${CFG_DOMAIN}}"
-export ldap_base_dn="${CFG_BASE_DN}"
-export ldap_bind_dn="cn=ldapclient,ou=people,${CFG_BASE_DN}"
-export ldap_bind_password="${CFG_SVC_PASS}"
-export sso_url="https://${CFG_SSO_HOST}"
+export ldap_host="${ldaps_host}"
+export ldap_base_dn="${ldap_base_dn}"
+export ldap_bind_dn="cn=ldapclient,ou=people,${ldap_base_dn}"
+export ldap_bind_password="${ldap_bind_pass}"
+export sso_url="https://${sso_host}"
 export sso_token=""
-export ldap_location="${CFG_SITE_NAME:-local}"
-ldap_access_groups=( "\${ldap_location}_access" "\${ldap_location}_host_\$(hostname)_access" "app_super_admin" )
+export ldap_location="${ldap_site:-local}"
+ldap_access_groups=( "\${ldap_location}_access" "\${ldap_location}_host_\$(hostname)_access" "god_admin" )
 LDAPVARS
 		else
 			info "  ldap-client/ldap.vars exists -- keeping it"
