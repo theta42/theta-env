@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.12] - 2026-08-04
+
+### Fixed
+- **theta-agent crash-looped (`cannot unmarshal !!bool 'true' into []string`)** — setup.sh's "full control" edit wrote `service_control: true`, but that field is a `[]string` allowlist, so the agent failed to decode the config and restart-loop. Removed the invalid edit; `service_control` now stays as its allowlist (default `[]` = deny all) and the operator can list specific services.
+
 ## [v1.35.11] - 2026-08-04
 
 ### Fixed

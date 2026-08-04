@@ -1214,9 +1214,14 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 		info "  Configuring theta-agent with full host control capabilities..."
 		if [[ -f /etc/theta42/agent.yml ]]; then
 			sudo sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta42/agent.yml
-			sudo sed -i 's/service_control: .*/service_control: true/' /etc/theta42/agent.yml
+			# service_control is a []string allowlist (NOT a bool) — setting it to
+			# `true` makes the agent fail YAML decode and crash-loop. There is no
+			# wildcard; leave the operator's list (or the [] default = deny all)
+			# alone and document how to enable specific services.
+			# sudo sed -i 's/service_control: .*/service_control: true/' ...
 			sudo sed -i 's/reboot: false/reboot: true/' /etc/theta42/agent.yml
 			sudo sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta42/agent.yml
+			info "    (service_control left as its allowlist; set e.g. service_control: [\"nginx\"] in /etc/theta42/agent.yml to permit managing specific services)"
 			info "  theta-agent full control enabled. Restarting service..."
 			sudo systemctl restart theta-agent.service
 		else
