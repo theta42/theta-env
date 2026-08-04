@@ -8,6 +8,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.36.0] - 2026-08-04
+
+### Added
+- **`god_admin` seeded + site groups auto-provisioned** (sso v1.26.0) — `god_admin` exists from first boot; every site gets `{site}_super_admin`, `{site}_hosts_*`/`{site}_apps_*` aggregates and `{site}_everyone`; per-resource groups (`{site}_{slug}_{level}`) nest into the site aggregates (the inheritance lattice now exists in LDAP, not just the resolver). See the sso changelog for the full group-model completeness + server-side naming enforcement + Directory god_admin management.
+- **Docker discovery plugin configured out of the box** — the bootstrap seeds a `docker-local` plugin instance pointed at `/var/run/docker.sock`, so a fresh stack discovers its own containers into the Directory immediately (idempotent; an operator-created instance is left alone).
+
+### Fixed
+- **ldap-client enrollment no longer fails** — `setup.sh` was calling `ldap-client/index.sh`, which refuses to run without a gitignored `ldap.vars` that nothing ever created (the "ldap.vars file not found!" + "enrollment failed" you saw). It now generates `ldap-client/ldap.vars` from the stack's own config (LDAPS host, base DN, `cn=ldapclient` bind + service password, SSO URL, site name) before enrolling; an operator-provided `ldap.vars` is always kept.
+- **theta-agent no longer logs `Unknown command type: heartbeat_ack`** every minute — the server's ack of the agent's own heartbeat is now silently ignored instead of falling through to the unknown-command handler (which also answered with a spurious error).
+
+### Changed
+- **Roll up sso v1.26.0 + theta-agent v1.3.0** — gitlinks point at the version-tagged commits for both submodules (sso-manager-node → 8a9de94, theta-agent → 52379c2). Full changelogs: [sso](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md), [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md).
+
 ## [v1.35.18] - 2026-08-04
 
 ### Changed

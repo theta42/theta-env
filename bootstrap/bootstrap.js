@@ -89,7 +89,12 @@ const CLIENT_NAME = 'theta-proxy';
 
 const ADMIN_DN  = `cn=${ADMIN_UID},ou=people,${BASE_DN}`;
 const SVC_DN    = `cn=ldapclient,ou=people,${BASE_DN}`;
-const ADMIN_GROUPS = ['app_sso_admin', 'app_sso_oauth_admin'];
+// god_admin is the global super group (docs/GROUPS.md §2); the bootstrapped
+// admin is its first member. app_sso_admin / app_sso_oauth_admin are the legacy
+// per-console admin groups still used by the SSO UI. god_admin is nested into
+// app_super_admin by docker-entrypoint.sh, so LDAP-level consumers (SSSD, sudo)
+// resolve it transitively.
+const ADMIN_GROUPS = ['god_admin', 'app_sso_admin', 'app_sso_oauth_admin'];
 
 const log  = (...a) => process.stderr.write('[bootstrap] ' + a.join(' ') + '\n');
 const out  = (k, v) => process.stdout.write(`${k}=${v}\n`);
@@ -537,6 +542,59 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	await linkOauthClient(jumpClientId, jumpSvc, 'jump-host');
 }
 
+// ── Plugin instances ────────────────────────────────────────────────────────
+// Seed a sensible default set of plugin instances so the stack is usable the
+// moment it boots, without the operator having to add them by hand. The setup
+// stack runs on Docker, so the single biggest win is a Docker discovery plugin
+// pointed at the local daemon socket: containers that make up the stack (and
+// any others on the host) get discovered into the Directory automatically.
+// Idempotent per slug: an instance an operator already created is left alone.
+async function seedPlugins(token) {
+	async function pluginGet(path) {
+		const res = await fetch(`${SSO_INTERNAL}/api/plugins/${path}`, {
+			headers: { 'auth-token': token },
+		});
+		if (!res.ok) throw new Error(`GET /api/plugins/${path} failed (${res.status})`);
+		return res.json();
+	}
+	async function pluginPost(body) {
+		const res = await fetch(`${SSO_INTERNAL}/api/plugins/`, {
+			method: 'POST',
+			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		});
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			throw new Error(`POST /api/plugins failed (${res.status}): ${text}`);
+		}
+		return res.json();
+	}
+
+	async function ensurePlugin({ pluginType, name, slug, config }) {
+		const existing = ((await pluginGet('')).results) || [];
+		if (existing.some((i) => i.slug === slug)) {
+			log(`  plugins: '${slug}' exists — keeping`);
+			return;
+		}
+		await pluginPost({ pluginType, name, slug, config });
+		log(`  plugins: created '${slug}' (${pluginType})`);
+	}
+
+	try {
+		// The Docker daemon the setup stack itself runs under. The socket must be
+		// mounted into the sso container for discovery to reach it; if it isn't,
+		// discovery simply errors non-fatally until it is.
+		await ensurePlugin({
+			pluginType: 'docker',
+			name: 'Local Docker daemon',
+			slug: 'docker-local',
+			config: { socketPath: '/var/run/docker.sock' },
+		});
+	} catch (e) {
+		log(`WARNING: plugin seed failed (${e.message || e}) — continuing`);
+	}
+}
+
 // Write the OAuth client creds back into /config/proxy-secrets.js so the proxy
 // (which reads that file) can use them. Only the clientId/clientSecret lines
 // are touched; the rest of the file (operator edits, comments) is preserved.
@@ -784,6 +842,15 @@ async function provisionJumpHost(token) {
 			await seedDirectory(token, resolvedClientId, jumpClientId);
 		} catch (e) {
 			log(`WARNING: directory seed failed (${e.message || e}) — continuing`);
+		}
+
+		// Seed default plugin instances (Docker discovery) — same warn-and-go
+		// policy; a stack without plugins is still usable.
+		try {
+			log('Seeding default plugins...');
+			await seedPlugins(token);
+		} catch (e) {
+			log(`WARNING: plugin seed failed (${e.message || e}) — continuing`);
 		}
 
 		log('Done.');

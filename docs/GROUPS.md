@@ -76,9 +76,20 @@ enumerated as LDAP members, and cannot be used as Unix groups.
 
 - The **structural delimiter is `_`**. It appears only between the fixed segments
   of a group name.
-- **Site, host, and app slugs never contain `_`.** Normalize to lowercase;
-  spaces and `_` → `-`; strip other non-`[a-z0-9-]`. A host named `Web 01` and a
-  site `Main Office` produce slugs `web-01` and `main-office`.
+- **The `S` site segment is the site resource's slug verbatim.** In the SSO
+  Directory, site/host resource slugs carry a kind prefix (`site_local`,
+  `host_theta-env`); the group builders keep them verbatim rather than
+  re-slugifying (which would corrupt the delimiter: `site_local` → `site-local`)
+  or inserting a separate kind segment. So a host resource `host_theta-env` under
+  site `site_local` yields `site_local_host_theta-env_access` (the `host_` is part
+  of the resource slug), and the site's own admin group is `site_local_super_admin`.
+  Services are stored without a prefix, giving `site_local_sso-manager_access`.
+  The kind (`host`/`app`) is used only to pick the **aggregate** the resource's
+  group nests into (`{site}_hosts_*` / `{site}_apps_*`), not the resource's own
+  group name.
+- **Within a segment, normalize to lowercase** — spaces and stray `_` → `-`; strip
+  other non-`[a-z0-9-]`. A host named `Web 01` and a site `Main Office` (resource
+  slugs `host_web-01` and `site_main-office`) yield groups `site_main-office_host_web-01_*`.
 - **Aggregate groups use the plural kind** (`hosts`, `apps`); per-resource groups
   use the singular (`host`, `app`). This makes `S_hosts_admin` unambiguous even
   if a host were named `admin` (that host would be `S_host_admin_admin`).
@@ -139,7 +150,7 @@ def effective(resource, level_or_cap, site):
     if level_or_cap in ("admin","access"):
         agg = f"{site}_{resource.kind}s_{level_or_cap}"
         if user in agg:                      return True
-    specific = f"{site}_{resource.kind}_{resource.slug}_{level_or_cap}"
+    specific = f"{site}_{resource.slug}_{level_or_cap}"   # slug carries its kind
     if user in specific:                     return True
     if level_or_cap == "access":             return effective(resource, "admin", site)
     if level_or_cap == "admin":              return False          # access does not imply admin
