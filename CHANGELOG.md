@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.9] - 2026-08-03
+
+### Fixed
+- **sso & proxy version strings now match their release tags** — The v1.20.2 / v1.32.0 release tags were created but their `nodejs/package.json` version fields were left behind (1.20.1 / 1.14.3), so the deployed apps' update-check banner falsely reported a newer version. Bumped submodules to the corrected commits so `buildVersion` matches the deployed tag.
+
 ## [v1.35.2] - 2026-08-03
 
 ### Fixed
