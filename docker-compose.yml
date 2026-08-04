@@ -238,6 +238,42 @@ services:
       - ./config/ldap-test-host.vars:/config/ldap.vars:ro
       - ./config/ldap-ca.crt:/config/ldap-ca.crt:ro
 
+  # Renews the three periodic service tokens (theta-svc role, 768h period)
+  # every 12h. Periodic tokens live forever ONLY while something renews them —
+  # this sidecar is that something, so the stack survives arbitrarily long
+  # uptimes and the tokens in .env never silently expire. If a token is missing
+  # or already dead it just logs and moves on (setup.sh re-mints on next run).
+  bao-renewer:
+    image: quay.io/openbao/openbao:latest
+    container_name: bao-renewer
+    restart: unless-stopped
+    depends_on:
+      - openbao
+    environment:
+      - BAO_ADDR=http://openbao:8200
+      - SSO_VAULT_TOKEN=${SSO_VAULT_TOKEN:-}
+      - PROXY_VAULT_TOKEN=${PROXY_VAULT_TOKEN:-}
+      - JUMP_VAULT_TOKEN=${JUMP_VAULT_TOKEN:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        renew() {
+          if [ -z "$$2" ]; then return 0; fi
+          if BAO_TOKEN="$$2" bao token renew > /dev/null 2>&1; then
+            echo "[bao-renewer] renewed $$1"
+          else
+            echo "[bao-renewer] FAILED to renew $$1 (expired/revoked? re-run setup.sh to re-mint)"
+          fi
+        }
+        while true; do
+          renew SSO_VAULT_TOKEN "$$SSO_VAULT_TOKEN"
+          renew PROXY_VAULT_TOKEN "$$PROXY_VAULT_TOKEN"
+          renew JUMP_VAULT_TOKEN "$$JUMP_VAULT_TOKEN"
+          sleep 43200
+        done
+    networks:
+      - theta-net
+
   openbao:
     image: quay.io/openbao/openbao:latest
     container_name: openbao

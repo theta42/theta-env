@@ -8,6 +8,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.14] - 2026-08-04
+
+### Fixed
+- **The recurring `/vault` 403 "permission denied" is actually dead this time — it was never a policy problem.** sso's `/api/vault` proxy declared its request hook with http-proxy-middleware **v3** syntax (`on: { proxyReq }`) while the app installs HPM **v2**, which silently ignores the unknown key — so `X-Vault-Token` was never injected and every vault call reached OpenBao unauthenticated. All the policy work of v1.35.10/v1.31.1 was correct and is unchanged; the requests just never carried a token. Ships as **sso v1.23.0** (see its changelog for the companion `fixRequestBody` header-ordering fix and the initORM schema heal that unbreaks the plugin scheduler on upgraded databases).
+
+### Added
+- **OpenBao token lifecycle — nothing expires by surprise anymore.**
+  - New **`theta-svc` token role** (periodic 768h): `SSO/PROXY/JUMP_VAULT_TOKEN` are now minted through it instead of as plain orphan tokens with a hard ~32-day death date. `ensure_token` renews periodic tokens on every `setup.sh` re-run and detects, revokes, and re-mints valid-but-non-periodic tokens from older installs (detection is the token's `role` — OpenBao token lookup does not expose a `period` field).
+  - New **`bao-renewer` sidecar** (docker-compose): renews the three service tokens every 12h while the stack runs, logging each result. Recreated on every `setup.sh` run so it always holds the current tokens.
+  - New **`sso-app` token role** (periodic 768h): external-app tokens minted from the vault UI go through it instead of the broker's 24h role, and sso now stores each app token's *accessor* and auto-renews it (boot + every 6h) — a downstream app's credential stays valid as long as sso runs, with no renewal code in the downstream app.
+  - `sso-broker` policy gained `update` on `auth/token/create/sso-app` and `auth/token/renew-accessor`/`revoke-accessor`/`lookup-accessor`.
+  - `docs/secrets.md` rewritten around the new lifecycle (roles table, renewal layers, disaster recovery).
+
 ## [v1.35.13] - 2026-08-04
 
 ### Added
