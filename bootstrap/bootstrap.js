@@ -90,10 +90,11 @@ const CLIENT_NAME = 'theta-proxy';
 const ADMIN_DN  = `cn=${ADMIN_UID},ou=people,${BASE_DN}`;
 const SVC_DN    = `cn=ldapclient,ou=people,${BASE_DN}`;
 // god_admin is the global super group (docs/GROUPS.md §2); the bootstrapped
-// admin is its first member. app_sso_admin / app_sso_oauth_admin are the legacy
+// admin is its first member. app_sso_admin / app_sso_oauth_admin are the
 // per-console admin groups still used by the SSO UI. god_admin is nested into
-// app_super_admin by docker-entrypoint.sh, so LDAP-level consumers (SSSD, sudo)
-// resolve it transitively.
+// the app_sso_* groups (and every resource's _admin group) by
+// docker-entrypoint.sh + api_directory_admin, so LDAP-level consumers (SSSD,
+// sudo) resolve it transitively.
 const ADMIN_GROUPS = ['god_admin', 'app_sso_admin', 'app_sso_oauth_admin'];
 
 const log  = (...a) => process.stderr.write('[bootstrap] ' + a.join(' ') + '\n');

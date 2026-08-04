@@ -8,6 +8,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.36.1] - 2026-08-04
+
+### Fixed
+- **`setup.sh` no longer aborts with `CFG_BASE_DN: unbound variable`** — the ldap-client `ldap.vars` generation read the CFG_* first-run vars, which `ensure_config` only derives once (it returns early on a re-run once `sso-secrets.js` exists). It now reads the real values from the operator-owned `./config/sso-secrets.js` when the CFG_* vars are unset, so LDAP enrollment works on re-runs too. The generated `ldap_access_groups` now references `god_admin` (the legacy `app_super_admin` is gone).
+- **Roll up sso v1.26.1** — drops the legacy `app_super_admin`: `SUPER_ADMIN_GROUP` is now `god_admin` (nested into every resource's `_admin` group), and `docker-entrypoint.sh` no longer seeds/nests `app_super_admin`. See the [sso changelog](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md).
+
 ## [v1.36.0] - 2026-08-04
 
 ### Added
