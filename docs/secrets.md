@@ -60,23 +60,49 @@ never passed to a service container.
 
 | Policy | Capabilities | Held by |
 |---|---|---|
-| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`; `update` on `auth/token/create/sso-broker`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
+| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`; `update` on `auth/token/create/sso-broker` + `create/sso-app` and `auth/token/renew-accessor`/`revoke-accessor`/`lookup-accessor`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
 | `sso-admin` | read/write/list all of `secret/*` | admin UI sessions (minted by the broker) |
 | `proxy` | read `secret/proxy/conf` | proxy (`PROXY_VAULT_TOKEN`) |
 | `jump-host` | read `secret/jump-host/conf` | jump host (`JUMP_VAULT_TOKEN`) |
 | `user-<uid>` | read/write `secret/users/<uid>/*` | per-user tokens (minted lazily by the broker) |
 | `app-<name>` | read/write `secret/apps/<name>/*` | per-external-app tokens (minted by an admin) |
 
-**Token role `sso-broker`** — `allowed_policies=sso-admin`,
-`allowed_policies_glob=user-*,app-*`, orphan, renewable, `token_period=24h`.
-The SSO mints per-user, per-admin, and per-app tokens *through* this role at
-runtime, so it never needs the root token to issue scoped access.
+**Token roles** — three, all orphan + renewable:
 
-The three per-app tokens (`SSO_VAULT_TOKEN`, `PROXY_VAULT_TOKEN`,
-`JUMP_VAULT_TOKEN`) are minted orphan + renewable and stored in `./.env` by
-`setup.sh`. They use OpenBao's default service-token TTL; if one expires,
-re-run `./setup.sh` and the `ensure_token` helper re-mints it (the old one
-expires on its own). Automated renewal is a planned follow-up, not yet built.
+- `sso-broker` — `allowed_policies=sso-admin`, `allowed_policies_glob=user-*,app-*`,
+  `token_period=24h`. The SSO mints per-user and per-admin tokens *through*
+  this role at runtime, so it never needs the root token to issue scoped
+  access. The 24h period is fine here because the broker re-mints these from
+  its Redis cache transparently.
+- `sso-app` — `allowed_policies_glob=app-*`, `token_period=768h`. External-app
+  tokens minted from the vault UI's Apps tab go through this role: they are
+  long-lived credentials, so they get a monthly period instead of a daily one.
+- `theta-svc` — `allowed_policies=sso-broker,proxy,jump-host`,
+  `token_period=768h`. The services' own tokens (below).
+
+### Token lifecycle — nothing expires by surprise
+
+Periodic tokens never hit a max TTL, but they die if nothing renews them
+inside a period window. Renewal is automated at every layer:
+
+- **Service tokens** (`SSO_VAULT_TOKEN`, `PROXY_VAULT_TOKEN`,
+  `JUMP_VAULT_TOKEN`, minted via `theta-svc`, stored in `./.env`): the
+  `bao-renewer` sidecar (docker-compose) renews all three every 12 hours, and
+  every `setup.sh` re-run renews them too. A valid-but-non-periodic token from
+  an older install is detected, revoked, and re-minted as periodic on the next
+  `setup.sh` run.
+- **External-app tokens** (minted in the SSO vault UI): the SSO stores each
+  token's **accessor** (which can renew/revoke but not authenticate) and
+  renews it every 6 hours and at boot — a downstream app's credential stays
+  valid as long as the SSO is running, with no renewal code in the downstream
+  app. Re-minting an app's token revokes the previous one via its accessor, so
+  exactly one credential per app is ever live.
+- **Per-user / admin tokens**: 24h TTL by design; the broker re-mints them
+  transparently, so there is nothing to renew.
+
+Worst case (the whole stack was down for >32 days): re-run `./setup.sh` — it
+re-mints anything that lapsed; external-app tokens are re-minted from the
+Apps tab (the app's policy and stored secrets are kept).
 
 ## Seeding
 

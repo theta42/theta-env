@@ -810,17 +810,34 @@ ensure_policy() {
 }
 
 
-# Mint an orphan, renewable token for `policy` and persist it to .env as `key`,
-# OR reuse the token already in .env if it is still valid (re-mint on expiry).
+# Mint a PERIODIC service token (theta-svc role: orphan, renewable, 768h
+# period) for `policy` and persist it to .env as `key`. Periodic tokens have no
+# max-TTL death date — each renewal resets the clock — unlike the plain orphan
+# tokens minted before this (creation_ttl 768h, dead ~32 days after mint no
+# matter what). The bao-renewer sidecar renews them every 12h while the stack
+# runs, and every setup.sh re-run renews here too. A valid-but-non-periodic
+# token from an older setup.sh is revoked and re-minted as periodic.
 ensure_token() {
-	local key="$1" policy="$2" existing tok
+	local key="$1" policy="$2" existing tok lookup
 	existing="$(env_get "$key")"
-	if [[ -n "$existing" ]] && docker exec -e BAO_TOKEN="$existing" openbao bao token lookup >/dev/null 2>&1; then
-		info "  ${key} already minted + valid — keeping."
-		return 0
+	if [[ -n "$existing" ]]; then
+		lookup="$(docker exec -e BAO_TOKEN="$existing" openbao bao token lookup -format=json 2>/dev/null || true)"
+		if [[ -n "$lookup" ]]; then
+			# Periodic = minted through the theta-svc role. (OpenBao token lookup
+			# does not expose a `period` field — the role is the reliable marker;
+			# renewal behavior confirms the 768h period resets past the original
+			# creation TTL.)
+			if echo "$lookup" | grep -q '"role": *"theta-svc"'; then
+				info "  ${key} already minted + periodic (theta-svc) — renewing to reset its clock."
+				docker exec -e BAO_TOKEN="$existing" openbao bao token renew >/dev/null 2>&1 || true
+				return 0
+			fi
+			info "  ${key} is valid but NOT periodic (pre-theta-svc mint; dies at its max TTL) — revoking + re-minting."
+			bao_run token revoke "$existing" >/dev/null 2>&1 || true
+		fi
 	fi
-	info "  minting ${key} (policy=${policy})..."
-	tok="$(bao_run token create -policy="$policy" -orphan=true -field=token)" \
+	info "  minting ${key} (policy=${policy}, role=theta-svc, periodic 768h)..."
+	tok="$(bao_run token create -role=theta-svc -policy="$policy" -field=token)" \
 		|| die "failed to mint ${key} (policy=${policy})"
 	env_upsert "$key" "$tok"
 }
@@ -858,6 +875,10 @@ path "secret/metadata/apps/*" { capabilities = ["list", "read", "delete"] }
 path "secret/data/plugins/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/plugins/*" { capabilities = ["list", "read", "delete"] }
 path "auth/token/create/sso-broker" { capabilities = ["update"] }
+path "auth/token/create/sso-app" { capabilities = ["update"] }
+path "auth/token/renew-accessor" { capabilities = ["update"] }
+path "auth/token/revoke-accessor" { capabilities = ["update"] }
+path "auth/token/lookup-accessor" { capabilities = ["update"] }
 path "sys/policies/acl/user-*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "sys/policies/acl/app-*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "sys/policies/acl/sso-admin" { capabilities = ["create", "read", "update", "delete", "list"] }
@@ -896,15 +917,48 @@ else
 	info "  token role sso-broker already exists — keeping."
 fi
 
+# sso-app token role: external-app tokens minted from the sso vault UI. Periodic
+# 768h (NOT the broker's 24h) — an app token is a long-lived credential; with a
+# 24h period any downstream app that didn't renew daily silently died. A 768h
+# period keeps it alive as long as the app renews (or is re-minted) at least
+# monthly: `bao token renew-self` / POST /v1/auth/token/renew-self.
+info "Configuring sso-app token role..."
+if ! bao_run read auth/token/roles/sso-app >/dev/null 2>&1; then
+	docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao write auth/token/roles/sso-app - <<'JSON' >/dev/null
+{"allowed_policies_glob":["app-*"],"orphan":true,"renewable":true,"token_period":"768h"}
+JSON
+else
+	info "  token role sso-app already exists — keeping."
+fi
+
+# theta-svc token role: the services' own tokens (SSO/PROXY/JUMP_VAULT_TOKEN).
+# Periodic 768h so they can be renewed forever (the bao-renewer sidecar renews
+# every 12h; each setup.sh re-run renews too). allowed_policies is exact-match:
+# exactly the three service policies, nothing else.
+info "Configuring theta-svc token role..."
+if ! bao_run read auth/token/roles/theta-svc >/dev/null 2>&1; then
+	docker exec -i -e BAO_TOKEN="$VAULT_TOKEN" openbao bao write auth/token/roles/theta-svc - <<'JSON' >/dev/null
+{"allowed_policies":["sso-broker","proxy","jump-host"],"orphan":true,"renewable":true,"token_period":"768h"}
+JSON
+else
+	info "  token role theta-svc already exists — keeping."
+fi
+
 info "Minting per-app OpenBao tokens (stored in .env, passed to containers as VAULT_TOKEN)..."
 ensure_token SSO_VAULT_TOKEN sso-broker
 ensure_token PROXY_VAULT_TOKEN proxy
 ensure_token JUMP_VAULT_TOKEN jump-host
 
 info "OpenBao secrets configured:"
-info "  policies:   sso-broker, sso-admin, proxy, jump-host (+ per-user/app created lazily by sso)"
-info "  token role: sso-broker (mints user-*/app-*/sso-admin tokens, 24h period)"
-info "  app tokens: SSO_VAULT_TOKEN, PROXY_VAULT_TOKEN, JUMP_VAULT_TOKEN in .env"
+info "  policies:    sso-broker, sso-admin, proxy, jump-host (+ per-user/app created lazily by sso)"
+info "  token roles: sso-broker (user-*/app-*/sso-admin, 24h period), sso-app (app-*, 768h period), theta-svc (service tokens, 768h period)"
+info "  app tokens:  SSO_VAULT_TOKEN, PROXY_VAULT_TOKEN, JUMP_VAULT_TOKEN in .env (periodic; renewed by bao-renewer)"
+
+# bao-renewer: renews the three periodic service tokens every 12h so they never
+# hit their period boundary while the stack is running. Recreated (not just
+# started) so it always picks up freshly re-minted tokens from .env.
+info "Starting bao-renewer (service-token renewal sidecar)..."
+"${COMPOSE[@]}" up -d --force-recreate bao-renewer
 
 # ── 4. Start SSO Manager, wait for health ─────────────────────────────────────
 # SSO_GIT_COMMIT: sso-manager-node is a git submodule here, so its .git is a
