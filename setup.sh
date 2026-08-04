@@ -1257,6 +1257,28 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 
 	if [[ "$CFG_THETA_AGENT_LDAP_AUTH" == "1" ]]; then
 		info "  Configuring LDAP authentication for this host..."
+
+		# ldap-client/index.sh refuses to run without ./ldap.vars, which is
+		# gitignored and never shipped in the checkout (it holds a real bind
+		# password). On the agent-enrollment path we generate it from the stack's
+		# own config so the host can actually enroll; an operator-provided
+		# ldap.vars (cp ldap.vars.template ldap.vars + edit) is always kept.
+		if [[ ! -f ldap-client/ldap.vars ]]; then
+			info "  Generating ldap-client/ldap.vars from the stack config..."
+			cat > ldap-client/ldap.vars <<LDAPVARS
+export ldap_host="${CFG_LDAPS_HOST:-sso.${CFG_DOMAIN}}"
+export ldap_base_dn="${CFG_BASE_DN}"
+export ldap_bind_dn="cn=ldapclient,ou=people,${CFG_BASE_DN}"
+export ldap_bind_password="${CFG_SVC_PASS}"
+export sso_url="https://${CFG_SSO_HOST}"
+export sso_token=""
+export ldap_location="${CFG_SITE_NAME:-local}"
+ldap_access_groups=( "\${ldap_location}_access" "\${ldap_location}_host_\$(hostname)_access" "app_super_admin" )
+LDAPVARS
+		else
+			info "  ldap-client/ldap.vars exists -- keeping it"
+		fi
+
 		(
 			cd ldap-client || exit 0
 			if [[ -x "index.sh" ]]; then
