@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.11] - 2026-08-04
+
+### Fixed
+- **`setup.sh` aborted with `UNSEAL_KEY: unbound variable` on re-runs** — when OpenBao was already unsealed, the unseal block was skipped and `UNSEAL_KEY` was never set, so the later `if [[ -n "$UNSEAL_KEY" ]]` crashed under `set -u`. Guarded with `${UNSEAL_KEY:-}`.
+
 ## [v1.35.10] - 2026-08-04
 
 ### Added
