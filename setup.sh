@@ -775,7 +775,9 @@ if [[ -z "$VAULT_TOKEN" ]]; then
 	die "Could not determine OpenBao VAULT_TOKEN from $CONFIG_DIR/bao-init.json or .env."
 fi
 
-if [[ -n "$UNSEAL_KEY" ]]; then
+# UNSEAL_KEY is only set when OpenBao needed unsealing this run; on a re-run of
+# an already-unsealed store it is unset, so guard with ${UNSEAL_KEY:-} (set -u).
+if [[ -n "${UNSEAL_KEY:-}" ]]; then
 	env_upsert VAULT_UNSEAL_KEY "$UNSEAL_KEY"
 fi
 env_upsert VAULT_TOKEN "$VAULT_TOKEN"
