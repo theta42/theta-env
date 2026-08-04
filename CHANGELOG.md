@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.35.13] - 2026-08-04
+
+### Added
+- **sso v1.22.0** — new **Agents** page (live list of connected theta-agent hosts with CPU/RAM/disk/ZFS/GPU telemetry + online status) and a security fix gating the `/api/agent` REST routes. Bumped the sso-manager-node gitlink to v1.22.0.
+
 ## [v1.35.12] - 2026-08-04
 
 ### Fixed
