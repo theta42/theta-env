@@ -8,6 +8,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.39.0] - 2026-08-05
+
+### Fixed
+- **Plain LDAP (389) now reachable from the host** — `docker-compose.yml` published only LDAPS (636); plain LDAP (389) was deliberately not mapped, so the stack host's own enrollment (`setup.sh` → ldap-client, which configures sssd against `ldap://localhost:389` and `ldaps://localhost:636`) could not reach the directory over loopback. Both 389 and 636 are now published to the host (bind 0.0.0.0; `LDAP_BIND`/`LDAPS_BIND=127.0.0.1` to lock to the host only).
+
 ## [v1.38.0] - 2026-08-04
 
 ### Fixed

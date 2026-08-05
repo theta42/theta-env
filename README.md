@@ -129,12 +129,15 @@ see browser warnings.)
 
 Optional extra ports (only if you need them):
 - **4443** — alternate HTTPS listener (e.g. if 443 is taken by something else).
-- **636** (LDAPS) — for direct-LDAP clients on other machines (Linux hosts
-  via PAM/SSSD, LDAP-native apps). The proxy itself reaches LDAP over the
-  internal Docker network, so you do **not** need to expose 636 for the stack
-  to work.
-  **Do not forward 636 to the public internet.** If you need LAN clients to bind
-  LDAP, set `CFG_LDAPS_HOST=ldap.internal.example.com` (or `sso-manager` for
+- **389** (LDAP) + **636** (LDAPS) — direct-LDAP access. The stack host's **own**
+  enrollment (`setup.sh` → ldap-client) configures its sssd against
+  `ldap://localhost:389` / `ldaps://localhost:636`, so both ports are published
+  to the host by default (bind 0.0.0.0; set `LDAP_BIND`/`LDAPS_BIND=127.0.0.1` to
+  lock to the host). LAN clients (Linux hosts via PAM/SSSD, LDAP-native apps) can
+  bind over either; the proxy itself reaches LDAP over the internal Docker
+  network and doesn't need them.
+  **Do not forward 389/636 to the public internet.** If you need LAN clients to
+  bind LDAP, set `CFG_LDAPS_HOST=ldap.internal.example.com` (or `sso-manager` for
   same-host Docker clients) in `setup.env` and use an internal DNS record / cert
   SAN. The default shows the public SSO hostname, which implies a public route.
 

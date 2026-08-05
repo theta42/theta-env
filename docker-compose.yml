@@ -52,12 +52,16 @@ services:
       # the UI is reachable on the LAN during setup). Set SSO_BIND=127.0.0.1 to
       # lock it to localhost once the proxy fronts it at https://<SSO_HOST>.
       - "${SSO_BIND:-0.0.0.0}:${SSO_PORT:-3001}:3001"
-      # LDAPS for EXTERNAL direct-LDAP clients (legacy apps). The proxy itself
-      # reaches LDAPS over theta-net (sso-manager:636) without this host mapping.
-      # Prefer an internal-only hostname (set CFG_LDAPS_HOST in setup.env / ldapsHost
-      # in sso-secrets.js) and do NOT forward 636 to the public internet.
-      - "${LDAPS_PORT:-636}:636"
-      # Plain LDAP (389) is NOT mapped — direct-LDAP clients should use LDAPS.
+      # LDAPS (636) + plain LDAP (389) for direct-LDAP clients AND for the stack
+      # host's OWN enrollment: setup.sh / ldap-client configure the host's sssd
+      # against ldap://localhost and ldaps://localhost, and the LDAP server is
+      # co-located on this host, so BOTH ports must be reachable from the host
+      # over loopback — not only over the docker network. Bind 0.0.0.0 (default)
+      # so LAN clients can use the host's local IP too; set LDAP_BIND and/or
+      # LDAPS_BIND=127.0.0.1 to lock either to the host only. Prefer an internal
+      # hostname (CFG_LDAPS_HOST) and do NOT forward 389/636 to the public internet.
+      - "${LDAP_BIND:-0.0.0.0}:${LDAP_PORT:-389}:389"
+      - "${LDAPS_BIND:-0.0.0.0}:${LDAPS_PORT:-636}:636"
     environment:
       # Config (LDAP, OAuth, SMTP, ...) is loaded by @simpleworkjs/conf from
       # ./config/sso-secrets.js (see volumes), then @simpleworkjs/bao-conf
