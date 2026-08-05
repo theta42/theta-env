@@ -81,6 +81,10 @@ services:
       - HTTPS_PROXY=${CFG_HTTPS_PROXY:-}
       - NO_PROXY=${CFG_NO_PROXY:-}
     volumes:
+      # The host docker socket so the bundled Docker discovery plugin (seeded as
+      # 'docker-local' with socketPath /var/run/docker.sock) can list containers.
+      # Without this the plugin errors with ENOENT and shows 'Last run: error'.
+      - /var/run/docker.sock:/var/run/docker.sock
       # Operator-edited SSO secrets (sso-secrets.js). Read-WRITE so the bootstrap
       # can write the generated OAuth client creds into proxy-secrets.js. The
       # entrypoint points CONF_SECRETS at /config/sso-secrets.js.

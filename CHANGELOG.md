@@ -8,6 +8,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.41.0] - 2026-08-05
+
+### Fixed
+- **The Local Docker daemon discovery plugin no longer errors** — the sso-manager container had no access to the host docker socket, so the seeded `docker-local` plugin (socketPath `/var/run/docker.sock`) failed with `ENOENT` and showed "Last run: error". `docker-compose.yml` now mounts `/var/run/docker.sock` into the container. Recreate the container (`docker compose up -d sso-manager`) and hit "Run now" on the plugin.
+- **theta-agent ships the rebuilt binary with the heartbeat fix** (v1.3.1, gitlink `51750d0`) — the prebuilt `theta-agent-linux-amd64` predated the v1.3.0 `heartbeat_ack` fix, so the installed agent still logged "Unknown command type: heartbeat_ack". Now rebuilt + tested.
+
 ## [v1.40.0] - 2026-08-05
 
 ### Fixed
