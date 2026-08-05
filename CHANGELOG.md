@@ -8,6 +8,76 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.42.0] - 2026-08-05
+
+Rolls up **sso-manager-node v1.29.0**, **theta-agent v1.4.0**, **proxy v1.34.0** and **jump-host v1.19.0**.
+
+> **Breaking — re-enroll your theta-agents.** The SSO now rejects agent tokens it
+> did not issue. Any agent installed before this release carries a token
+> generated in the browser that the server never recorded, and will be refused
+> with close code `4001` until re-enrolled from **Directory → Install Agent**.
+>
+> **Re-run `./setup.sh`.** The `sso-broker` OpenBao policy needs the new
+> `secret/agent/*` grant, or the SSO cannot persist its agent signing key and
+> will refuse every high-risk agent command.
+
+### Fixed — theta-suite orchestration
+
+- **Per-host SSO returned `400 redirect_uri is not registered for this client`.** The bootstrap registered only the proxy's own management callback (`https://<proxy-host>/api/auth/oidc/callback`), but per-host SSO calls back to `https://<protected-host>/__proxy_auth/callback` — a different URL for every host the proxy fronts, all against that one OAuth client. It now also registers `https://**.<domain>/__proxy_auth/callback` and the bare apex, and `ensureRedirectUris()` backfills them onto an existing client so upgraded stacks are fixed too, not just fresh installs. (The SSO's wildcard matcher already supported this; nothing was ever registered to use it.)
+- **Seeded services were parented to the wrong host.** `theta-proxy` and `theta-jump` were created as host resources and then left childless, while the Proxy, OpenResty Edge and SSH Jump Host services hung off the stack host instead. They now parent to the host that runs them. `reparent()` corrects existing installs on the next run, and only when the current parent is exactly the one the old code set — a layout an operator arranged deliberately is left alone.
+- The directory-edge fetch added for re-parenting is tolerated separately from the resource list, so losing it can't skip seeding the resources themselves.
+
+### Added — theta-suite orchestration
+
+- **The proxy gets a read-only SSO API token.** Minted by the bootstrap and written into `proxy-secrets.js` (before the OpenBao snapshot, so the running proxy actually receives it), backing the per-host SSO group autocomplete. Idempotent: only mints when `sso.apiToken` is still empty.
+- `setup.sh` writes an `sso: { url, apiToken }` block into the generated `proxy-secrets.js`.
+- The `sso-broker` OpenBao policy grants `secret/agent/*` for the persistent theta-agent signing key.
+- `docs/secrets.md` documents the signing key, why it must be stable, and what happens when the grant is missing.
+
+---
+
+### sso-manager-node v1.29.0
+
+**Security — the theta-agent channel authenticated nothing.** `/api/agent/ws` accepted any token string; there was no agent registry, because tokens were generated in the *browser* and never recorded server-side. Anyone who could reach the SSO could register as a node, publish discovery/telemetry into the admin view, and receive commands — including a signed `arbitrary_bash` — addressed to a token they guessed.
+
+- Agents are now rows in a new `Agent` table, authenticated by SHA-256 token hash *before* the connection is registered or the welcome payload is sent. Unknown/revoked → close `4001`, audited.
+- `POST /api/agent/enroll` mints the token server-side and returns it once; only its hash is stored. Rotate/revoke/delete drop the live socket immediately (`4004`/`4003`).
+- Commands are addressed by agent **id**, never by token.
+- The Ed25519 signing key was generated in the `AgentManager` constructor, so it changed on every restart and the `public_key` pinned in an agent's `agent.yml` stopped matching. It now lives in OpenBao at `secret/agent/signing-key`; if it can't be loaded the SSO refuses high-risk commands rather than signing with a key no agent has seen.
+- Enroll/update/rotate/revoke/delete, every command, and every rejected connection are audited with the acting user.
+
+**Directory & agents.** Agents bind to a host resource instead of being matched by hostname; a bound agent's discovery is written onto that resource (`discovery_sources: ["theta-agent"]`) — previously the one source running *on* the host contributed nothing. Enrollments survive restarts, so "installed but offline" (red) is now distinguishable from "no agent" (grey). The Install Agent modal enrolls first and emits `--public-key`, which was never written into `agent.yml` before.
+
+**Directory tree.** Collapsible, with per-browser persisted state; an active search overrides collapse so matches inside folded subtrees aren't hidden.
+
+**Discovery — found by running against a live 3-node Proxmox cluster.**
+
+- MACs and IPs were collected into two flat lists and zipped by index, attributing addresses to the wrong NIC on multi-NIC guests. NICs are now keyed by MAC.
+- A Proxmox endpoint resource now parents its nodes (one endpoint = one subtree), carrying no IP — giving it the address it's reached at made the reconciler merge it with the node answering there, producing a resource that was **its own parent**. Self-edges and cycle-closing edges are refused.
+- Hosts were named after their MAC address, because `bestName` preferred the longer string. Names are ranked hostname > IP > MAC.
+- `isIp` never matched anything (`\\.` in a regex literal matches a backslash, not a dot).
+- Guests carry `sourceId`/`node`/`vmid`/`macAddress`; container and overlay interfaces (`docker0`, `veth*`) are filtered out; stopped VMs still report a MAC; DHCP LXCs get an address; nodes report their own IP/MAC; offline nodes are recorded rather than skipped.
+- Cross-kind merges prevented; the inventory is read once per run instead of once per incoming resource.
+
+**Other.** The Profile page's API Tokens card is no longer wider than every other card (it sat outside the page container). `Dockerfile.test-runner` never copied `nodejs/plugins`, so every plugin test suite had been failing in CI as "Cannot find module" — suites 27 → 29, 296 tests passing.
+
+### theta-agent v1.4.0 (protocol v1.2.0)
+
+- **Fail-closed verification.** `verifySignature` returned `true` when no `public_key` was configured — and the installer never wrote one, so a default install executed `reboot`, `configure_ldap`, `arbitrary_bash` and `update_binary` **unverified**.
+- **Canonicalization disagreed with the server.** Go's `encoding/json` escapes `<`, `>` and `&`; `JSON.stringify` does not. Any payload containing them failed verification — for `arbitrary_bash` that is most real scripts (`>` redirection, `&&`). Now uses `SetEscapeHTML(false)`.
+- Handles the SSO's enrollment close codes and backs off 5 minutes instead of retrying a dead credential every 5 seconds forever.
+- The connect log no longer prints the URL, which carried `?token=`.
+- `install.sh --public-key`, and a loud warning when none is configured.
+
+### proxy v1.34.0
+
+- The per-host SSO **Allowed groups** field autocompletes from the SSO directory's groups. It previously suggested only local groups — the one set of values that can never match, since the allow-list is checked against the SSO's `groups` claim. New `conf.sso` block; degrades silently when unset.
+- Authenticates with `Authorization: Bearer`, not the `auth-token` header.
+
+### jump-host v1.19.0
+
+- **Only catalog hosts are jump targets.** The filter treated a missing `managed` flag as permission, so unpromoted discovery results — Proxmox guests, UniFi clients — appeared in the TUI picker and were accepted by the username grammar. It now mirrors the SSO Directory's own rule.
+
 ## [v1.41.0] - 2026-08-05
 
 ### Fixed

@@ -60,7 +60,7 @@ never passed to a service container.
 
 | Policy | Capabilities | Held by |
 |---|---|---|
-| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`; `update` on `auth/token/create/sso-broker` + `create/sso-app` and `auth/token/renew-accessor`/`revoke-accessor`/`lookup-accessor`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
+| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`, `secret/agent/*`; `update` on `auth/token/create/sso-broker` + `create/sso-app` and `auth/token/renew-accessor`/`revoke-accessor`/`lookup-accessor`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
 | `sso-admin` | read/write/list all of `secret/*` | admin UI sessions (minted by the broker) |
 | `proxy` | read `secret/proxy/conf` | proxy (`PROXY_VAULT_TOKEN`) |
 | `jump-host` | read `secret/jump-host/conf` | jump host (`JUMP_VAULT_TOKEN`) |
@@ -175,6 +175,21 @@ const baoConf = require('@simpleworkjs/bao-conf');
 const data = await baoConf.get('apps/my-service/conf'); // secret/data/apps/my-service/conf
 await baoConf.set('apps/my-service/conf', { db_password: '...' });
 ```
+
+## The theta-agent signing key
+
+The SSO signs high-risk theta-agent commands (`reboot`, `configure_ldap`,
+`arbitrary_bash`, …) with an Ed25519 key stored at
+`secret/agent/signing-key`. Agents pin the matching public key in their
+`agent.yml`, so the key **must** be stable: it used to be generated in memory at
+process start, which meant it changed on every restart and no agent could
+meaningfully verify anything.
+
+If the SSO cannot read or write that path it refuses to send high-risk commands
+rather than signing with a key no agent has seen — so an upgraded stack that has
+not re-run `./setup.sh` (and therefore lacks `secret/agent/*` in the
+`sso-broker` policy) will report `signingAvailable: false` on
+`GET /api/agent/nodes` and reject those commands with a clear error.
 
 ## Plugin secrets
 

@@ -398,6 +398,12 @@ module.exports = {
 		groupsClaim: 'groups',
 		usernameClaim: 'preferred_username',
 	},
+	// Read-only SSO management API access, used to list directory groups for the
+	// per-host SSO allow-list autocomplete. apiToken is minted by the bootstrap.
+	sso: {
+		url: 'http://sso-manager:3001',
+		apiToken: '',
+	},
 	ldap: {
 		url: 'ldaps://sso-manager:636',
 		bindDN: $(js_str "cn=ldapclient,ou=people,${dn}"),
@@ -889,6 +895,11 @@ path "secret/data/apps/*" { capabilities = ["create", "read", "update", "delete"
 path "secret/metadata/apps/*" { capabilities = ["list", "read", "delete"] }
 path "secret/data/plugins/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/plugins/*" { capabilities = ["list", "read", "delete"] }
+# The Ed25519 key the SSO signs high-risk theta-agent commands with. It must
+# persist across restarts: agents pin the matching public key in agent.yml, so
+# a key that changes on every boot makes signature verification meaningless.
+path "secret/data/agent/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/agent/*" { capabilities = ["list", "read", "delete"] }
 path "auth/token/create/sso-broker" { capabilities = ["update"] }
 path "auth/token/create/sso-app" { capabilities = ["update"] }
 path "auth/token/renew-accessor" { capabilities = ["update"] }
