@@ -8,6 +8,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.37.0] - 2026-08-04
+
+### Changed
+- **Group naming corrected to match docs/GROUPS.md** — per-resource groups are `{site}_{kind}_{name}_{level}` (kind always present; a host `host_theta-env` → `site_local_host_theta-env_access`, a service → `site_local_app_sso-manager_access`). The spec's §3 text was updated to state this explicitly.
+- **Roll up sso v1.27.0** — group names match the docs, a site carries only god + site-wide groups, duplicate group links removed, `/api/agent/*` no longer 404s, shared-secrets POST/GET fixed, Vault Apps tab lists minted tokens, discovery promote + plugin run logs fixed. See the [sso changelog](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md).
+
 ## [v1.36.1] - 2026-08-04
 
 ### Fixed
