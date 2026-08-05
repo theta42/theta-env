@@ -84,6 +84,26 @@ const HAS_USABLE_CREDS = EXISTING_ID && EXISTING_SECRET
 	&& !PLACEHOLDER.test(EXISTING_ID) && !PLACEHOLDER.test(EXISTING_SECRET);
 
 const REDIRECT_URI = `https://${PROXY_HOST}/api/auth/oidc/callback`;
+
+// Per-host SSO (proxy routes/host_auth.js) calls back to
+// `https://<proxied-host>/__proxy_auth/callback` — a DIFFERENT URL for every
+// host the proxy fronts, all against this one OAuth client. Registering just
+// REDIRECT_URI above is what produced "400 redirect_uri is not registered for
+// this client" the moment a host's auth was set to SSO. The SSO's
+// redirectUriAllowed() supports `**` (any number of labels), so one pattern
+// covers the whole domain; `**.` does not match the bare apex, so register that
+// separately for a host served at the domain itself.
+//
+// A function, not a const: DOMAIN is declared further down this file, so
+// evaluating it here at module scope would hit the temporal dead zone.
+function proxyRedirectUris() {
+	if (!DOMAIN) return [REDIRECT_URI];
+	return [
+		REDIRECT_URI,
+		`https://**.${DOMAIN}/__proxy_auth/callback`,
+		`https://${DOMAIN}/__proxy_auth/callback`,
+	];
+}
 const SSO_INTERNAL = 'http://localhost:3001';
 const CLIENT_NAME = 'theta-proxy';
 
@@ -338,7 +358,7 @@ async function listClients(token) {
 }
 
 async function createClient(token, opts) {
-	const o = opts || { name: CLIENT_NAME, description: 'theta-suite proxy (auto-registered)', redirect_uris: [REDIRECT_URI] };
+	const o = opts || { name: CLIENT_NAME, description: 'theta-suite proxy (auto-registered)', redirect_uris: proxyRedirectUris() };
 	const res = await fetch(`${SSO_INTERNAL}/api/oauth/client`, {
 		method: 'POST',
 		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
@@ -360,6 +380,29 @@ async function createClient(token, opts) {
 	if (!id || !secret) throw new Error(`create OAuth client returned no id/secret: ${JSON.stringify(data)}`);
 	log(`Created OAuth client ${o.name} (${id})`);
 	return { id, secret };
+}
+
+// Add any redirect_uris the client is missing, keeping whatever the operator
+// has already registered. Backfills installs whose proxy client was created
+// before the per-host `__proxy_auth/callback` patterns existed — without this,
+// setting a host's auth to SSO fails with "400 redirect_uri is not registered
+// for this client" on an upgraded stack and only works on a fresh one.
+// Warn-only: a stack that cannot widen its client is still a working stack.
+async function ensureRedirectUris(token, client, wanted) {
+	const have = client.redirect_uris || [];
+	const missing = wanted.filter((u) => !have.includes(u));
+	if (!missing.length) return;
+	try {
+		const res = await fetch(`${SSO_INTERNAL}/api/oauth/client/${client.client_id}`, {
+			method: 'PUT',
+			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ redirect_uris: [...have, ...missing] }),
+		});
+		if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => '')}`);
+		log(`  OAuth client ${client.name}: registered ${missing.length} redirect URI(s) for per-host SSO`);
+	} catch (error) {
+		log(`  WARNING: could not add redirect URIs to ${client.name}: ${error.message}`);
+	}
 }
 
 async function rotateClient(token, id) {
@@ -444,6 +487,30 @@ const HOST_FACTS = {
 
 async function seedDirectory(token, clientId, jumpClientId) {
 	let resources = ((await dirGet(token, 'resources')).results) || [];
+	// Tolerated separately from the resource list: edges only drive the
+	// re-parent + OAuth-link steps, and losing those is not a reason to skip
+	// seeding the resources themselves.
+	let edges = [];
+	try { edges = ((await dirGet(token, 'edges')).results) || []; }
+	catch (e) { log(`  WARNING: could not list directory edges (${e.message}) — skipping re-parent/link steps`); }
+
+	// Move an already-seeded resource under the parent it should have had.
+	// Only ever corrects a parent this bootstrap itself seeded wrongly (the
+	// proxy/jump services were parented to the stack host instead of to
+	// host_theta-proxy / host_theta-jump); an operator who has deliberately
+	// re-parented something keeps their layout, because we only rewire when the
+	// current parent is the one the old code would have set.
+	async function reparent(resource, wantParentId, fromParentId) {
+		if (!resource || !wantParentId || !fromParentId) return;
+		const current = edges.find((e) => e.childId === resource.id && (e.relation === 'hosts' || e.relation === 'oauth'));
+		if (!current) return;                          // unparented: leave it alone
+		if (current.parentId === wantParentId) return; // already correct
+		if (current.parentId !== fromParentId) return; // operator moved it: respect that
+		// PUT with kind + hostId is what makes the route rewire the parent edge.
+		await dirPut(token, `resources/${resource.id}`, { kind: resource.kind, hostId: wantParentId });
+		current.parentId = wantParentId;
+		log(`  directory: re-parented ${resource.kind} '${resource.slug}' onto its own host`);
+	}
 
 	// Create a resource unless its slug (or a legacy alternate from an earlier
 	// seed layout) already exists. On an existing resource, seed metadata keys
@@ -499,7 +566,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// appear as hosts in the Directory; the per-app services below still carry
 	// the OAuth-client + reachability detail.
 	const jumpHostAddr = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
-	await ensure('host', 'theta-proxy', 'host_theta-proxy', site.id, {
+	const proxyHostRes = await ensure('host', 'theta-proxy', 'host_theta-proxy', site.id, {
 		subType: 'linux',
 		address: `https://${PROXY_HOST}`,
 		port: 3000,
@@ -508,7 +575,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		tagline: 'Reverse proxy and API gateway (node management UI).',
 		managed: true,
 	});
-	await ensure('host', 'theta-jump', 'host_theta-jump', site.id, {
+	const jumpHostRes = await ensure('host', 'theta-jump', 'host_theta-jump', site.id, {
 		subType: 'ssh',
 		address: jumpHostAddr ? `https://${jumpHostAddr}` : '',
 		port: 3002,
@@ -529,7 +596,11 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	});
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
 	// in the stack actually flows through (80/443). Two faces, two entries.
-	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, {
+	// Both parent to host_theta-proxy, not to the stack host: the whole point of
+	// seeding that host resource is that the proxy's services hang off it. Seeded
+	// under the stack host until 2026-08-05, which left host_theta-proxy and
+	// host_theta-jump childless while their services sat under the wrong parent.
+	const psvc = await ensure('service', 'Proxy', 'proxy', proxyHostRes.id, {
 		address: `https://${PROXY_HOST}`,
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -558,7 +629,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// Wildcard address: OpenResty fronts every host under the domain (same
 	// */** wildcard convention the proxy's Host records use). Its config lives
 	// in the proxy repo (ops/nginx_conf).
-	await ensure('service', 'OpenResty Edge', 'openresty', host.id, {
+	await ensure('service', 'OpenResty Edge', 'openresty', proxyHostRes.id, {
 		address: DOMAIN ? `https://*.${DOMAIN}` : `https://${PROXY_HOST}`,
 		port: 443,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -572,7 +643,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	let jumpSvc = null;
 	{
 		const jumpHost = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
-		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', host.id, {
+		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', jumpHostRes.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
@@ -583,16 +654,22 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		});
 	}
 
+	// Correct installs seeded before 2026-08-05, where these three services were
+	// parented to the stack host rather than to the proxy/jump host resources.
+	await reparent(psvc, proxyHostRes.id, host.id);
+	await reparent(resources.find((r) => r.slug === 'openresty'), proxyHostRes.id, host.id);
+	await reparent(jumpSvc, jumpHostRes.id, host.id);
+
 	// Link an OAuth client (Resource-backed since sso-manager 1.3.0) under its
 	// owning service, if it appears in the directory and isn't linked yet.
 	async function linkOauthClient(id, parent, label) {
 		if (!id || !parent) return;
 		const oauthRes = resources.find((r) => r.id === id);
 		if (!oauthRes) return;
-		const edges = ((await dirGet(token, 'edges')).results) || [];
 		const linked = edges.some((e) => e.childId === id);
 		if (!linked) {
 			await dirPost(token, 'edges', { parentId: parent.id, childId: id, relation: 'oauth' });
+			edges.push({ parentId: parent.id, childId: id, relation: 'oauth' });
 			log(`  directory: linked OAuth client under '${label}'`);
 		}
 	}
@@ -683,6 +760,48 @@ function writeProxyCreds(id, secret) {
 	}
 }
 
+// The proxy needs a read-only SSO API token so its per-host SSO allow-list can
+// suggest the directory's actual groups (otherwise the "Allowed groups" field
+// autocompletes from the proxy's local groups only, which for an SSO-gated host
+// is never what the operator wants). Idempotent: only mints when the file's
+// `sso.apiToken` is still empty, and only rewrites that one line. Warn-only —
+// no token just means no suggestions.
+const PROXY_TOKEN_NAME = 'theta-proxy';
+
+async function ensureProxyApiToken(token) {
+	const path = '/config/proxy-secrets.js';
+	let src;
+	try {
+		src = fs.readFileSync(path, 'utf8');
+	} catch (e) {
+		log(`  WARNING: cannot read ${path} to add an SSO API token (${e.message})`);
+		return;
+	}
+	// An `sso: { ... apiToken: 'sso_...' }` already present means we're done.
+	if (/apiToken:\s*['"]sso_[0-9a-f]{24}_[0-9a-f]{48}['"]/.test(src)) {
+		log('  proxy already has an SSO API token — keeping');
+		return;
+	}
+	if (!/\bsso:\s*\{/.test(src)) {
+		log(`  WARNING: ${path} has no \`sso\` block — add one with url + apiToken to enable SSO group autocomplete`);
+		return;
+	}
+	try {
+		const apiToken = await mintApiToken(token, PROXY_TOKEN_NAME, 'theta-suite proxy (auto-registered)');
+		// Replace the apiToken line inside the sso block only. The jump host's
+		// token lives in a different file, so an unanchored match is safe here.
+		const updated = src.replace(/(apiToken:\s*)(['"])[^'"]*\2/, `$1$2${apiToken}$2`);
+		if (updated === src) {
+			log(`  WARNING: could not locate apiToken in ${path} — set sso.apiToken manually`);
+			return;
+		}
+		fs.writeFileSync(path, updated);
+		log(`  Minted SSO API token for the proxy and wrote it into ${path}`);
+	} catch (e) {
+		log(`  WARNING: could not provision the proxy's SSO API token: ${e.message}`);
+	}
+}
+
 // ── 6. Provision the SSH jump host ─────────────────────────────────────────
 // The jump host is a core component (always provisioned). It needs: a directory
 // API token (to resolve which hosts a user may reach), an LDAP bind account
@@ -699,11 +818,11 @@ const JUMP_TOKEN_NAME = 'theta-jump-host';
 const JUMP_CLIENT_NAME = 'theta-jump';
 const JUMP_REDIRECT_URI = `https://${JUMP_HOST}/api/auth/oidc/callback`;
 
-async function mintApiToken(token, name) {
+async function mintApiToken(token, name, description) {
 	const res = await fetch(`${SSO_INTERNAL}/api/api-token`, {
 		method: 'POST',
 		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name, description: 'theta-suite jump host (auto-registered)' }),
+		body: JSON.stringify({ name, description: description || 'theta-suite jump host (auto-registered)' }),
 	});
 	if (!res.ok) throw new Error(`mint API token failed (${res.status}): ${await res.text().catch(() => '')}`);
 	const data = await res.json();
@@ -838,6 +957,10 @@ async function provisionJumpHost(token) {
 		if (HAS_USABLE_CREDS) client = list.find((c) => c.client_id === EXISTING_ID);
 		if (!client) client = list.find((c) => c.name === CLIENT_NAME);
 
+		// Widen an existing client before any of the branches below return: a
+		// freshly created one already gets these from createClient().
+		if (client) await ensureRedirectUris(token, client, proxyRedirectUris());
+
 		if (client && HAS_USABLE_CREDS && client.client_id === EXISTING_ID) {
 			// File creds match an existing client — trust the file's secret
 			// (it's bcrypt-hashed server-side, so we can't verify, but the proxy
@@ -866,6 +989,11 @@ async function provisionJumpHost(token) {
 			out('ALREADY_CONFIGURED', '0');
 			resolvedClientId = id;
 		}
+
+		// Must run before the baoPut below: that snapshots proxy-secrets.js into
+		// OpenBao, and the proxy loads its conf from there at boot, so a token
+		// written after the snapshot would never reach the running proxy.
+		await ensureProxyApiToken(token);
 
 		// Mirror the (now-current) proxy-secrets.js into OpenBao so the proxy
 		// loads it from there at boot via @simpleworkjs/bao-conf. Re-require
