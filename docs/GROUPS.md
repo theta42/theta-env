@@ -232,12 +232,12 @@ Key ideas:
 A host should import its **own** resource groups (plus any explicitly granted
 ones). Because the schema is predictable, `ldap-client` can generate the per-host
 `ldap_group_search_filter` from the enrolled host's identity, e.g. a host `web01`
-at site `main-office` imports:
+at site `main-office` (site resource slug `site_main-office`) imports:
 
 ```
-(&(objectClass=groupOfNames)(|(cn=main-office_host_web01_access)
-                               (cn=main-office_host_web01_admin)
-                               (cn=main-office_host_web01_sudo)))
+(&(objectClass=groupOfNames)(|(cn=site_main-office_host_web01_access)
+                               (cn=site_main-office_host_web01_admin)
+                               (cn=site_main-office_host_web01_sudo)))
 ```
 
 So the operator (or ldap-client) selects a small allowlist of the host's `_access`
