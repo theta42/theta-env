@@ -8,6 +8,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.38.0] - 2026-08-04
+
+### Fixed
+- **LDAP enrollment no longer reaches for the public domain** — `setup.sh` generated `ldap.vars` with `ldap_host` defaulting to the public SSO host (`sso.<domain>`), which the NAT/firewall blocks on the LDAP ports (389/636). It now defaults to `localhost` (the LDAP server is co-located on the stack host; `ldap_tls_reqcert=never` makes this safe), overridable with `CFG_LDAPS_HOST` for an internal hostname/IP.
+- **SSH access groups match the SSO group model** (ldap-client v1.24.0) — the generated `sssd.conf` access filter and `ldap-ssh-key.sh` referenced the legacy names (`<location>_access`, `app_super_admin`); they now use `site_<location>_hosts_access` (all-hosts aggregate), `site_<location>_host_<hostname>_access`, and `god_admin`. GROUPS.md §8's example updated to match.
+
 ## [v1.37.0] - 2026-08-04
 
 ### Changed

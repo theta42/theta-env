@@ -1288,8 +1288,13 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 			ldap_site="${CFG_SITE_NAME:-$(sso_secrets_get siteName)}"
 			ldap_bind_pass="${CFG_SVC_PASS:-$(sso_secrets_get_top serviceAccountPass)}"
 			sso_host="${CFG_SSO_HOST:-$(sso_secrets_get ssoHost)}"
-			ldaps_host="${CFG_LDAPS_HOST:-}"
-			[[ -n "$ldaps_host" ]] || ldaps_host="${sso_host:-}"
+			# The LDAP server is co-located with the stack on THIS host, so the
+			# host must reach it over the loopback / a local address -- NEVER the
+			# public domain (sso.<domain>), which cannot route back to the 389/636
+			# ports through NAT. localhost is fine because the generated sssd.conf
+			# sets ldap_tls_reqcert=never (hostname verification is off). An
+			# operator may override with CFG_LDAPS_HOST (an internal hostname/IP).
+			ldaps_host="${CFG_LDAPS_HOST:-localhost}"
 			cat > ldap-client/ldap.vars <<LDAPVARS
 export ldap_host="${ldaps_host}"
 export ldap_base_dn="${ldap_base_dn}"
@@ -1298,7 +1303,9 @@ export ldap_bind_password="${ldap_bind_pass}"
 export sso_url="https://${sso_host}"
 export sso_token=""
 export ldap_location="${ldap_site:-local}"
-ldap_access_groups=( "\${ldap_location}_access" "\${ldap_location}_host_\$(hostname)_access" "god_admin" )
+# Groups that grant SSH/access on this host (docs/GROUPS.md §8): the site's
+# all-hosts aggregate, this host's own access group, and god_admin.
+ldap_access_groups=( "site_\${ldap_location}_hosts_access" "site_\${ldap_location}_host_\$(hostname)_access" "god_admin" )
 LDAPVARS
 		else
 			info "  ldap-client/ldap.vars exists -- keeping it"
