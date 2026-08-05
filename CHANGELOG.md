@@ -8,6 +8,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.40.0] - 2026-08-05
+
+### Fixed
+- **No more spurious "Invalid Credentials, login failed" during LDAP enrollment** (ldap-client v1.25.0, gitlink `68fcdb5`) — `index.sh` self-registered the host in the Directory when `sso_token` was *declared but empty* (it checked `[[ -v ]]`), POSTing an empty Bearer token and getting a misleading `LDAPLoginFailed`. It now only registers with a real token; the stack host (already seeded by the bootstrap) skips registration.
+- **The `cn=ldapclient` service account now shows in the SSO Users UI** — it was created as a bare `organizationalRole` (invisible to the `posixAccount` user filter) and never joined `app_sso_service_account`, so it never appeared as a service account. The bootstrap now creates it as a `posixAccount` (uid 10001, above the regular-user reserved floor) and adds it to `app_sso_service_account`; for an existing account it best-effort adds the `posixAccount` shape (auxiliary, so it can't conflict with the structural `organizationalRole`) + the group membership.
+
 ## [v1.39.0] - 2026-08-05
 
 ### Fixed

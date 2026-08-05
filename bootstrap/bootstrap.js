@@ -178,31 +178,88 @@ function ldapModify(ldif) {
 }
 
 // ── 1. LDAP service account for the proxy ───────────────────────────────────
+// The proxy / ldap-client bind as cn=ldapclient. For it to SHOW in the SSO Users
+// UI as a service account it must (a) match the user filter (posixAccount) and
+// (b) be a member of app_sso_service_account (that membership is what the Users
+// page marks as a non-person/service account). Older bootstraps created it as a
+// bare organizationalRole (invisible to the Users list) and never joined the
+// group, so it never appeared. Both are fixed here; the existing-path shape add
+// is best-effort so a pre-existing account still binds even if the upgrade add
+// fails.
 function ensureServiceAccount() {
 	const pw = hashPasswordSSHA512(SVC_PASS);
+	const uidNum = '10001'; // distinct from the bootstrap admin's 10000; above uidGidReservedFloor so regular-user id allocation ignores it
 	if (entryExists(SVC_DN)) {
-		log(`Service account ${SVC_DN} exists — resetting password to ./config`);
-		const r = ldapModify([
+		log(`Service account ${SVC_DN} exists — ensuring service-account shape + password`);
+		// Add the auxiliary posixAccount objectClass + required attrs so the entry
+		// matches the Users list filter. inetOrgPerson is deliberately NOT added:
+		// it is structural and would conflict with the existing organizationalRole.
+		const shape = [
+			`dn: ${SVC_DN}`,
+			'changetype: modify',
+			'add: objectClass',
+			'objectClass: posixAccount',
+			'-',
+			'add: uid',
+			'uid: ldapclient',
+			'-',
+			'add: uidNumber',
+			`uidNumber: ${uidNum}`,
+			'-',
+			'add: gidNumber',
+			`gidNumber: ${uidNum}`,
+			'-',
+			'add: homeDirectory',
+			'homeDirectory: /nonexistent',
+			'-',
+			'add: description',
+			'description: LDAP bind service account (proxy / ldap-client)',
+			'',
+		].join('\n');
+		const rs = ldapModify(shape);
+		if (rs.code !== 0 && !/already exists|Type or value exists/i.test(rs.stderr)) {
+			log('  service-account shape warning (account still binds):', rs.stderr.trim());
+		}
+		const rp = ldapModify([
 			`dn: ${SVC_DN}`,
 			'changetype: modify',
 			'replace: userPassword',
 			`userPassword: ${pw}`,
 			'',
 		].join('\n'));
-		if (r.code !== 0) log('  password reset warning:', r.stderr.trim());
-		return;
+		if (rp.code !== 0) log('  password reset warning:', rp.stderr.trim());
+	} else {
+		log(`Creating service account ${SVC_DN}`);
+		const entry = [
+			`dn: ${SVC_DN}`,
+			'objectClass: inetOrgPerson',
+			'objectClass: posixAccount',
+			'objectClass: top',
+			'cn: ldapclient',
+			'sn: ldapclient',
+			'uid: ldapclient',
+			`uidNumber: ${uidNum}`,
+			`gidNumber: ${uidNum}`,
+			'homeDirectory: /nonexistent',
+			'description: LDAP bind service account (proxy / ldap-client)',
+			`userPassword: ${pw}`,
+			'',
+		].join('\n');
+		const r = ldapAdd(entry);
+		if (r.code !== 0) throw new Error(`ldapadd service account failed: ${r.stderr.trim()}`);
 	}
-	log(`Creating service account ${SVC_DN}`);
-	const r = ldapAdd([
-		`dn: ${SVC_DN}`,
-		'objectClass: organizationalRole',
-		'objectClass: simpleSecurityObject',
-		'objectClass: top',
-		'cn: ldapclient',
-		`userPassword: ${pw}`,
+	// Mark it as a service account (the Users UI's service-account signal).
+	const gdn = `cn=app_sso_service_account,ou=groups,${BASE_DN}`;
+	const rm = ldapModify([
+		`dn: ${gdn}`,
+		'changetype: modify',
+		'add: member',
+		`member: ${SVC_DN}`,
 		'',
 	].join('\n'));
-	if (r.code !== 0) throw new Error(`ldapadd service account failed: ${r.stderr.trim()}`);
+	if (rm.code === 0) log(`  marked ${SVC_DN} as a service account`);
+	else if (/already exists|Type or value exists/i.test(rm.stderr)) log(`  ${SVC_DN} already in app_sso_service_account`);
+	else log(`  app_sso_service_account membership warning:`, rm.stderr.trim());
 }
 
 // ── 2. First admin user ─────────────────────────────────────────────────────
