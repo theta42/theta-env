@@ -8,6 +8,26 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.44.0] - 2026-08-06
+
+Rolls up **sso-manager-node v1.30.1**.
+
+### sso-manager-node v1.30.1
+
+**Test Email and Test SMS could never have worked, and all SMS delivery was broken.**
+
+- Test Email threw `Email.send is not a function`: `models/email.js` exports `{Mail}`, and the handler required the module and called `.send` on it directly.
+- Test SMS threw `Unexpected token '<', "<!DOCTYPE "...`: it POSTed to `https://api.voip.ms/v1.0/sms/send`, an endpoint that does not exist. VoIP.ms's REST API is a GET against `voip.ms/api/v1/rest.php` with `api_username`/`api_password` and `method=sendSMS`, so the fabricated URL returned an HTML page and `response.json()` threw.
+- **Every SMS was broken, not just the test.** `models/sms.js` called `PluginInstance.find({…})`, but the ORM has no `find` — the query method is `list({where})`. It threw on every send, before it could even fall back to the direct VoIP.ms path, so OTP-by-SMS and notifications were dead too.
+- Both test endpoints now send through the same senders every real message uses. A test that reimplements delivery proves nothing about whether real delivery works — which is how two independently broken paths went unnoticed. Failures report as `400` with the underlying reason instead of an opaque `500`.
+- New guard suite fails the build on any call to a non-existent ORM static, on requiring `models/email` without destructuring `{Mail}`, and on any reference to the bogus `api.voip.ms` host.
+
+**Install Agent offers the join-key flow.** v1.43.0 shipped join keys in the API and documented the modal as the place to get one, but the modal itself still only did the pre-register flow. It now leads with "Join key" — mint one, copy a single install command, and the host enrolls itself.
+
+### Release note
+
+Tagged with GitHub Actions in a major outage. CI could not run (every job failed at *Set up job* with `Failed to resolve action download info: Service Unavailable`, before reaching any test). Verified locally instead, on the exact merged commit: the full Docker suite — same LDAP + Redis service containers CI uses — passed **299/299**, plus proxy 176/176, jump-host 43/43 and theta-agent green. The Node 18/20/22 matrix was not exercised.
+
 ## [v1.43.0] - 2026-08-06
 
 Rolls up **sso-manager-node v1.30.0**, **theta-agent v1.5.1**, **proxy v1.35.0**. Fixes what a fresh `setup.sh` install actually produced under v1.42.0.
