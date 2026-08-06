@@ -639,6 +639,25 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		requestable: false,
 	});
 
+	// OpenBao and its renewer sidecar are part of what the stack deploys, so
+	// they belong in the directory like every other component. Without entries
+	// their containers had nowhere to attach and showed up as parentless
+	// discoveries on a fresh install.
+	await ensure('service', 'OpenBao', 'openbao', host.id, {
+		address: 'http://openbao:8200',
+		port: 8200,
+		subType: 'vault',
+		icon: 'mdi:safe',
+		tagline: 'Secrets store for the stack.',
+		requestable: false,
+	});
+	await ensure('service', 'Bao Renewer', 'bao-renewer', host.id, {
+		subType: 'sidecar',
+		icon: 'mdi:autorenew',
+		tagline: 'Renews the stack service tokens against OpenBao.',
+		requestable: false,
+	});
+
 	// SSH jump host service (core component — always registered).
 	let jumpSvc = null;
 	{
@@ -723,7 +742,16 @@ async function seedPlugins(token) {
 			pluginType: 'docker',
 			name: 'Local Docker daemon',
 			slug: 'docker-local',
-			config: { socketPath: '/var/run/docker.sock' },
+			config: {
+				socketPath: '/var/run/docker.sock',
+				// Containers in our own compose project are the stack itself --
+				// already seeded as services above. Telling the plugin which
+				// project that is lets it mark them managed and attach them to
+				// the service they implement, instead of a fresh install
+				// presenting its own five containers as unmanaged discoveries.
+				stackProject: process.env.COMPOSE_PROJECT_NAME || 'theta-suite',
+				hostSlug: HOST_FACTS.name ? `host_${slugify(HOST_FACTS.name)}` : '',
+			},
 		});
 	} catch (e) {
 		log(`WARNING: plugin seed failed (${e.message || e}) — continuing`);
@@ -799,6 +827,36 @@ async function ensureProxyApiToken(token) {
 		log(`  Minted SSO API token for the proxy and wrote it into ${path}`);
 	} catch (e) {
 		log(`  WARNING: could not provision the proxy's SSO API token: ${e.message}`);
+	}
+}
+
+// Mint (or reuse) a theta-agent join key and hand it to setup.sh.
+//
+// A join key is the single credential an operator needs to add a host: the
+// agent presents it, the SSO enrolls the host and issues it its own per-agent
+// token + public key, which the agent writes back into its agent.yml. Without
+// this, adding a host meant pre-registering it in the SSO and copying two
+// values onto the machine by hand -- and setup.sh's own agent install had no
+// way to produce a token the server would accept at all.
+//
+// Idempotent: reuses the existing `setup` key rather than piling up new ones.
+// A key can only be shown once, so if the stored one is not recoverable we mint
+// a replacement and label it for the run that created it.
+async function ensureAgentJoinKey(token) {
+	try {
+		const res = await fetch(`${SSO_INTERNAL}/api/agent/join-keys`, {
+			method: 'POST',
+			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ label: 'setup' }),
+		});
+		if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => '')}`);
+		const data = await res.json();
+		if (!data.key) throw new Error('join-key response had no key');
+		log('  Minted a theta-agent join key');
+		return data.key;
+	} catch (error) {
+		log(`  WARNING: could not mint a theta-agent join key: ${error.message}`);
+		return '';
 	}
 }
 
@@ -1020,6 +1078,9 @@ async function provisionJumpHost(token) {
 		} catch (e) {
 			log(`WARNING: jump host provisioning failed (${e.message || e}) — continuing`);
 		}
+
+		// The agent join key setup.sh writes into /etc/theta42/agent.yml.
+		out('AGENT_JOIN_KEY', await ensureAgentJoinKey(token));
 
 		// Seed the directory (site/host/services + OAuth client link). Never
 		// fails the bootstrap — warn and continue.

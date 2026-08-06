@@ -8,6 +8,48 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.43.0] - 2026-08-06
+
+Rolls up **sso-manager-node v1.30.0**, **theta-agent v1.5.1**, **proxy v1.35.0**. Fixes what a fresh `setup.sh` install actually produced under v1.42.0.
+
+> **No manual step to re-enroll agents.** v1.42.0 required an admin to pre-register every host. `setup.sh` now mints a **join key** and the agent enrolls itself, so installing the agent is once again all it takes to add a host.
+
+### Fixed — theta-suite orchestration
+
+- **The stack's own theta-agent could never connect.** `setup.sh` generated a random token locally and wrote it into `agent.yml`. The SSO only accepts credentials it issued, so that token was rejected on every attempt and the agent looped on `close 4001: Unauthorized` forever. It now writes a join key the SSO minted; the agent exchanges it for its own token and the SSO's public key on first connect and rewrites its own config.
+- **`agent.yml` was left holding literal placeholders.** The `REPLACE_WITH_ISSUED_AGENT_TOKEN` / `REPLACE_WITH_SSO_PUBLIC_KEY` strings were shipped as-is when the seds no longer matched the renamed fields, so the file on a fresh install contained no credential at all. The file is also `chmod 600` now that it holds one.
+- **A fresh install presented its own five containers as unmanaged discoveries** (`theta-proxy`, `theta-jump`, `sso-manager`, `bao-renewer`, `openbao`). The compose project name is now passed to the Docker discovery plugin, which recognises them as ours and links each to the service it implements.
+- **`openbao` and `bao-renewer` had no directory entries**, so their containers had nothing to attach to and appeared as parentless roots. Both are seeded as services now — they are part of what the stack deploys and belong in the directory like every other component.
+
+### Added
+
+- The bootstrap mints a theta-agent join key and hands it to `setup.sh` (`AGENT_JOIN_KEY`), reusing the `setup`-labelled key across runs.
+
+---
+
+### sso-manager-node v1.30.0
+
+**Join keys.** `POST /api/agent/join-keys` mints one credential an operator hands out; a host presenting it is enrolled automatically and immediately issued its **own** per-agent token plus the public key to pin. The join key is a bootstrap credential, never the host's identity — one key stays convenient without becoming a fleet-wide skeleton key, every host remains individually revocable, and revoking a key stops new hosts joining without touching enrolled ones.
+
+**Collapsing the Directory tree did nothing.** `applyTreeCollapse` found the caret with `.tree-caret i` and returned early when absent — Font Awesome's SVG-with-JS mode rewrites `<i>` to `<svg>`, so that selector matched nothing and the early return skipped setting `hideBelowDepth`, meaning no row was ever hidden. State now lives on the caret button, rotated by CSS.
+
+**Discovery Plugins.** The delete button called `deleteDiscoveryPlugin()`, which was never defined. The pane also had no `.actionMessage`, and confirmations render into one — without it the promise never settles, so an awaited confirmation hangs forever and the gated action silently never happens. Instances can now be edited (secrets shown blank rather than prefilled with the mask).
+
+**Discovery.** Docker container slugs came from the container id, which changes on recreate, so every deploy minted a new resource and orphaned the old one; they now derive from compose project + service.
+
+**Docs.** `/docs/discovery` 404'd; new `docs/discovery.md`. The `agents` slug pointed at `plugins.md`, leaving `docs/agents.md` unreachable in-app.
+
+### theta-agent v1.5.1
+
+- `join_key` config field, presented while `auth_token` is empty. The agent persists the issued token + public key into its own `agent.yml` — line-based, so comments, capabilities and formatting survive — and blanks the join key.
+- Sends `?hostname=` so a self-enrolling host is named after itself; refuses to connect with no credential rather than presenting an empty one.
+- `install.sh --join-key`.
+- **v1.5.1 rebuilds the prebuilt `theta-agent-linux-amd64`.** `setup.sh` installs that committed binary rather than building from source, and the v1.5.0 one predated join-key support — it would have received a `join_key` it did not understand. Same trap as the v1.3.0 heartbeat fix.
+
+### proxy v1.35.0
+
+- Permission entries can be **edited**; previously only Delete existed, so changing a role meant delete-and-re-add. Because a permission's id is derived from (subjectType, subject, scope, domain), changing any of those replaces the record — the endpoint creates the new grant and removes the superseded one in that order, so an edit can never leave the old grant conferring access.
+
 ## [v1.42.0] - 2026-08-05
 
 Rolls up **sso-manager-node v1.29.0**, **theta-agent v1.4.0**, **proxy v1.34.0** and **jump-host v1.19.0**.
