@@ -1080,7 +1080,13 @@ STACK_HOST_MAC=""
 [[ -n "$_iface" ]] && STACK_HOST_MAC="$(cat "/sys/class/net/$_iface/address" 2>/dev/null || true)"
 STACK_HOST_OS="$( (. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}") || true)"
 STACK_HOST_KERNEL="$(uname -r 2>/dev/null || true)"
+# The compose project name the stack runs under (defaults to the directory
+# name). The bootstrap hands it to the Docker discovery plugin so the stack's
+# own containers are recognised as ours rather than discovered as strangers.
+STACK_COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
+
 BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
+	-e COMPOSE_PROJECT_NAME="$STACK_COMPOSE_PROJECT" \
 	-e STACK_HOST_NAME="$STACK_HOST_NAME" \
 	-e STACK_HOST_IP="$STACK_HOST_IP" \
 	-e STACK_HOST_MAC="$STACK_HOST_MAC" \
@@ -1095,6 +1101,9 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 getval() { echo "$BOOTSTRAP_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
 CLIENT_ID=$(getval CLIENT_ID)
 ALREADY_CONFIGURED=$(getval ALREADY_CONFIGURED)
+# The one credential the local theta-agent needs; it exchanges this for its own
+# token + the SSO public key on first connect (see 7c below).
+AGENT_JOIN_KEY=$(getval AGENT_JOIN_KEY)
 [[ -n "$CLIENT_ID" ]] || die "bootstrap did not return CLIENT_ID:\n${BOOTSTRAP_OUT}"
 
 if [[ "$ALREADY_CONFIGURED" == "1" ]]; then
@@ -1230,14 +1239,39 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 				sudo mkdir -p /etc/theta42
 				if [[ ! -f /etc/theta42/agent.yml ]]; then
 					sudo cp agent.yml.example /etc/theta42/agent.yml
-					AGENT_TOKEN="$(rand_hex 16)"
-					sudo sed -i "s/REPLACE_WITH_AGENT_TOKEN/$AGENT_TOKEN/" /etc/theta42/agent.yml
+					# Write the JOIN KEY, not a locally-invented token. The SSO
+					# only accepts credentials it issued, so the random token
+					# this used to generate could never authenticate -- the
+					# agent looped on "close 4001: Unauthorized" forever. The
+					# agent swaps this key for its own token (and the public key
+					# it must pin) on first connect and rewrites this file.
+					if [[ -n "$AGENT_JOIN_KEY" ]]; then
+						# Only the join key is written. The agent exchanges it
+						# for its own token + the SSO public key on first
+						# connect and rewrites this file itself.
+						#
+						# This used to sed a locally generated random value into
+						# auth_token. The SSO only accepts credentials it
+						# issued, so that token could never authenticate and the
+						# agent looped on "close 4001: Unauthorized" forever.
+						if sudo grep -q '^join_key:' /etc/theta42/agent.yml; then
+							sudo sed -i "s|^join_key:.*|join_key: \"${AGENT_JOIN_KEY}\"|" /etc/theta42/agent.yml
+						else
+							echo "join_key: \"${AGENT_JOIN_KEY}\"" | sudo tee -a /etc/theta42/agent.yml >/dev/null
+						fi
+						# Older agent.yml.example shipped REPLACE_WITH_* placeholders;
+						# blank them so they are not mistaken for real credentials.
+						sudo sed -i "s|REPLACE_WITH_ISSUED_AGENT_TOKEN||; s|REPLACE_WITH_AGENT_TOKEN||; s|REPLACE_WITH_SSO_PUBLIC_KEY||" /etc/theta42/agent.yml
+					else
+						warn "No agent join key available — /etc/theta42/agent.yml has no credential and the agent will not connect."
+					fi
 					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
 					if [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]]; then
 						sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta42/agent.yml
 					else
 						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta42/agent.yml
 					fi
+					sudo chmod 600 /etc/theta42/agent.yml
 				fi
 				# Stop a running agent before overwriting its binary (cp into a
 				# running executable fails with "Text file busy" on a re-install).
