@@ -1,8 +1,11 @@
-# theta-suite
+# Theta Suite
 
-The whole theta42 identity + access stack in one repo, brought up with a single
-command — for home labs and small businesses.
-
+Theta Suite is your one-line solution to replacing fragmented, hard-to-wire
+authentication setups with a unified security stack. It wires together OIDC
+authentication, LDAP user directories, automated host enrollment, and
+centralized secret management in a single command. It eliminates the manual
+configuration friction so you get secure access, auditability, and multi-site
+replication running in seconds.
 It composes four applications around a shared [OpenBao](https://openbao.org/)
 secrets store, brought up with one command:
 
@@ -20,7 +23,7 @@ secrets store, brought up with one command:
 All four load their secrets from OpenBao at boot; `setup.sh` automates the
 first-run glue so they find each other and the secrets store.
 
-**Documentation:** [https://theta42.github.io/theta-suite/](https://theta42.github.io/theta-suite/)
+**Site:** [https://theta42.github.io/theta-suite/](https://theta42.github.io/theta-suite/)
 
 ## Screenshots
 
@@ -37,37 +40,31 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 - Registers the proxy as an OIDC client of the SSO.
 - Persists submodule commit hashes in `.env` for reproducibility (e.g., `SSO_GIT_COMMIT`, `PROXY_GIT_COMMIT`). This ensures future `docker compose` runs use the same submodule versions.
 
-**Why use this instead of running the two separately?** The two only become useful once the proxy is registered as an OIDC client of the SSO and pointed at the SSO's LDAP directory — and the SSO's domain has to match across half a dozen config fields or logins silently fail with `Invalid Credentials`. Doing that by hand is fiddly and easy to get wrong. `setup.sh` handles this automatically and snapshots state before every rebuild — so you get a working SSO + proxy stack in one command and a safe way to upgrade it.
-
-## Unified Release Status
-- ✅ **Phase 1 (oidc-client)**: Complete.
-- ⏳ **Phases 2-5**: Pending (see [roadmap](#)).
-
 ```
-          ┌──────────────────────────────────────────────────────────┐
-          │ browser / OIDC apps │ SSH clients │ Linux hosts            │
-          │                     │             │ (PAM/SSSD, sudo, keys)  │
-          └────────┬────────────┴──────┬──────┴───────────┬───────────┘
+          ┌───────────────────────────────────────────────────────────┐
+          │ browser / OIDC apps │ SSH clients │ Linux hosts           │
+          │                     │             │ (PAM/SSSD, sudo, keys)│
+          └───────┬─────────────┴───────┬─────┴────────────┬──────────┘
             https (:443)          ssh (:2222)        ldaps (:636)
                   │                     │                  │
-         ┌────────▼────────┐  ┌──────────▼────────┐         │
-         │  proxy           │  │  jump-host        │         │
-         │  OpenResty       │  │  sshd :2222       │         │
-         │  :80/:443/:4443  │  │  web UI :3002     │         │
-         │  mgmt app :3000  │  └────────┬──────────┘         │
-         └────────┬─────────┘           │ OIDC + LDAP        │
-                  │ http:3001 (internal)│ via sso-manager    │
-                  ▼                     ▼                    ▼
+         ┌────────▼─────────┐  ┌────────▼──────────┐       │
+         │  proxy           │  │  jump-host        │       │
+         │  OpenResty       │  │  sshd :2222       │       │
+         │  :80/:443/:4443  │  │  web UI :3002     │       │
+         │  mgmt app :3000  │  └────────┬──────────┘       │
+         └────────┬─────────┘           │ OIDC + LDAP      │
+                  │ http:3001 (internal)│ via sso-manager  │
+                  ▼                     ▼                  ▼
         ┌───────────────────────────────────────────────────────┐
-        │  sso-manager   (Express + OpenLDAP + Redis)            │
-        │  OIDC provider + LDAP directory                         │
-        │  web UI :3001 (internal)   ldaps :636 (published)       │
+        │  sso-manager   (Express + OpenLDAP + Redis)           │
+        │  OIDC provider + LDAP directory                       │
+        │  web UI :3001 (internal)   ldaps :636 (published)     │
         └───────────────────────────────────────────────────────┘
                           ▲  loads secrets at boot (scoped token each)
               ┌───────────┴───────────────────┐
-              │  openbao   (KV-v2 at secret/)  │  ← central secrets store
+              │  openbao   (KV-v2 at secret/) │  ← central secrets store
               │  :8200 (internal)             │     per-user + per-app KV
-              │  :8080 (operator UI/API)     │
+              │  :8080 (operator UI/API)      │
               └───────────────────────────────┘
 ```
 
@@ -154,7 +151,10 @@ Optional extra ports (only if you need them):
 
 ### 4. Docker + Docker Compose
 
-You must use the modern Docker Compose v2 plugin (`docker compose`). The older v1 standalone (`docker-compose`) is not compatible with the BuildKit images generated by this suite and will fail with a `ContainerConfig` KeyError during deployment.
+You must use the modern Docker Compose v2 plugin (`docker compose`). The older
+v1 standalone (`docker-compose`) is not compatible with the BuildKit images
+generated by this suite and will fail with a `ContainerConfig` KeyError during
+deployment.
 
 ---
 
