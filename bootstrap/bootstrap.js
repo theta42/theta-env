@@ -468,6 +468,18 @@ async function dirPut(token, path, body) {
 	return res.json();
 }
 
+async function dirDelete(token, path) {
+	const res = await fetch(`${SSO_INTERNAL}/api/directory-admin/${path}`, {
+		method: 'DELETE',
+		headers: { 'auth-token': token },
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`DELETE /api/directory-admin/${path} failed (${res.status}): ${text}`);
+	}
+	return res.json();
+}
+
 // The site the stack registers itself under. Also the default "Location
 // (Site)" that ldap-client-joined Linux hosts attach to (parent slug
 // site_<name> — see ldap-client/index.sh), so the slugs must line up.
@@ -561,29 +573,23 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		managed: true,
 	}, ['stack-host']);
 
-	// theta-proxy and theta-jump are first-class managed host resources (their
-	// names match the OAuth client identities the proxy/jump apps use). They
-	// appear as hosts in the Directory; the per-app services below still carry
-	// the OAuth-client + reachability detail.
-	const jumpHostAddr = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
-	const proxyHostRes = await ensure('host', 'theta-proxy', 'host_theta-proxy', site.id, {
-		subType: 'linux',
-		address: `https://${PROXY_HOST}`,
-		port: 3000,
-		gitRepo: 'https://github.com/theta42/proxy',
-		icon: 'mdi:server-network',
-		tagline: 'Reverse proxy and API gateway (node management UI).',
-		managed: true,
-	});
-	const jumpHostRes = await ensure('host', 'theta-jump', 'host_theta-jump', site.id, {
-		subType: 'ssh',
-		address: jumpHostAddr ? `https://${jumpHostAddr}` : '',
-		port: 3002,
-		gitRepo: 'https://github.com/theta42/jump-host',
-		icon: 'mdi:ssh',
-		tagline: 'Secure SSH jump host.',
-		managed: true,
-	});
+	// "Host" means a real, independently-existing machine — something with its
+	// own OS and sshd, that theta-agent or a directory-aware tool like the jump
+	// host could actually reach on its own. A Docker container backing one of
+	// this stack's own services is never that, no matter how convenient it'd be
+	// to group its services under a host-shaped node in the UI: it has no sshd,
+	// no independent network identity, nothing jump-host could honestly offer
+	// as an SSH target. Proxy and jump-host are two of this stack's five
+	// containers, running on the one real host above (`host`) — not machines of
+	// their own. Briefly (2026-08-05 through the next release) this file seeded
+	// `host_theta-proxy` / `host_theta-jump` as first-class `kind: 'host'`
+	// resources to fix their services being parented to the stack host; that
+	// solved the parenting problem with the wrong tool. The right tool already
+	// existed: `kind: 'container'` (see seedPlugins' Docker discovery, which
+	// already attaches `docker-theta-suite-proxy` etc. under these services
+	// correctly) sits one layer below `service`, same as `sso-manager` and
+	// `openbao` already do. So: no synthetic hosts — Proxy's and jump-host's
+	// services parent directly onto the stack host, same as everything else.
 
 	await ensure('service', 'SSO Manager', 'sso-manager', host.id, {
 		address: `https://${SSO_HOST}`,
@@ -595,12 +601,9 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		requestable: false,
 	});
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
-	// in the stack actually flows through (80/443). Two faces, two entries.
-	// Both parent to host_theta-proxy, not to the stack host: the whole point of
-	// seeding that host resource is that the proxy's services hang off it. Seeded
-	// under the stack host until 2026-08-05, which left host_theta-proxy and
-	// host_theta-jump childless while their services sat under the wrong parent.
-	const psvc = await ensure('service', 'Proxy', 'proxy', proxyHostRes.id, {
+	// in the stack actually flows through (80/443). Two faces, two entries, both
+	// parented directly to the stack host — see the "Host means..." note above.
+	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, {
 		address: `https://${PROXY_HOST}`,
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -629,7 +632,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// Wildcard address: OpenResty fronts every host under the domain (same
 	// */** wildcard convention the proxy's Host records use). Its config lives
 	// in the proxy repo (ops/nginx_conf).
-	await ensure('service', 'OpenResty Edge', 'openresty', proxyHostRes.id, {
+	await ensure('service', 'OpenResty Edge', 'openresty', host.id, {
 		address: DOMAIN ? `https://*.${DOMAIN}` : `https://${PROXY_HOST}`,
 		port: 443,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -662,7 +665,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	let jumpSvc = null;
 	{
 		const jumpHost = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
-		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', jumpHostRes.id, {
+		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', host.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
@@ -673,11 +676,39 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		});
 	}
 
-	// Correct installs seeded before 2026-08-05, where these three services were
-	// parented to the stack host rather than to the proxy/jump host resources.
-	await reparent(psvc, proxyHostRes.id, host.id);
-	await reparent(resources.find((r) => r.slug === 'openresty'), proxyHostRes.id, host.id);
-	await reparent(jumpSvc, jumpHostRes.id, host.id);
+	// Correct installs seeded between 2026-08-05 and this release, where Proxy's
+	// and jump-host's services were parented to now-removed synthetic
+	// `host_theta-proxy` / `host_theta-jump` resources instead of the stack
+	// host. Look them up by slug (never created going forward) rather than
+	// `ensure`-ing them back into existence: on any install that never had
+	// them, or already got corrected, this is a no-op.
+	const proxyHostRes = resources.find((r) => r.slug === 'host_theta-proxy');
+	const jumpHostRes = resources.find((r) => r.slug === 'host_theta-jump');
+	if (proxyHostRes) {
+		await reparent(psvc, host.id, proxyHostRes.id);
+		await reparent(resources.find((r) => r.slug === 'openresty'), host.id, proxyHostRes.id);
+	}
+	if (jumpHostRes) {
+		await reparent(jumpSvc, host.id, jumpHostRes.id);
+	}
+
+	// Once childless, the synthetic host itself is dead weight from this file's
+	// own earlier mistake — never something an operator would hand-create at
+	// these exact reserved slugs — so remove it. DELETE /resources/:id clears
+	// its own edges first, so this is safe now that the reparents above have
+	// already moved the real children off of it.
+	async function removeIfChildless(resource, label) {
+		if (!resource) return;
+		const stillHasChildren = edges.some((e) => e.parentId === resource.id);
+		if (stillHasChildren) {
+			log(`  directory: '${label}' still has children after reparenting — leaving it for now`);
+			return;
+		}
+		await dirDelete(token, `resources/${resource.id}`);
+		log(`  directory: removed now-empty synthetic host '${label}'`);
+	}
+	await removeIfChildless(proxyHostRes, 'host_theta-proxy');
+	await removeIfChildless(jumpHostRes, 'host_theta-jump');
 
 	// Link an OAuth client (Resource-backed since sso-manager 1.3.0) under its
 	// owning service, if it appears in the directory and isn't linked yet.
