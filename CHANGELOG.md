@@ -8,6 +8,25 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.45.0] - 2026-08-06
+
+Rolls up **sso-manager-node v1.30.2**, **proxy v1.35.1**, **jump-host v1.19.1**.
+
+### bootstrap.js — Directory topology fix
+
+**`host_theta-proxy` / `host_theta-jump` were synthetic `kind: 'host'` resources that never should have existed.** "Host" means a real, independently-existing machine — something with its own OS and sshd. A Docker container backing one of this stack's own services is never that: it has no sshd, no independent network identity. Proxy and jump-host are two of this stack's five containers, running on the one real stack host — not machines of their own.
+
+A 2026-08-05 change gave them their own `host` resources to fix their services being parented to the stack host, solving that parenting problem with the wrong tool — the correct one, `kind: 'container'`, already existed one layer below `service` (same as `sso-manager` and `openbao` already used correctly). Beyond being conceptually wrong, this had a real functional consequence: jump-host resolves its "hosts you can reach" list from exactly `kind: host` resources, so it could offer `theta-proxy`/`theta-jump` as SSH targets — machines that don't exist and can't be reached.
+
+Fixed: `bootstrap.js` no longer creates the synthetic hosts. Proxy's and jump-host's services parent directly onto the stack host, like every other component. On an install seeded between 2026-08-05 and this release, the fix self-heals on the next `./setup.sh` run — existing children are re-parented onto the real host and the now-empty synthetic host resources are removed automatically; a fresh install never creates them.
+
+### Docs
+
+- `README.md`'s architecture diagram and "Repo layout" section described a stale 2-service (sso-manager + proxy) architecture from before jump-host and OpenBao existed — updated to match the (already-accurate) `docs/architecture.md`, and listed only 2 of 5 git submodules — added the rest.
+- `docs/fixtures.md` (new) — the canonical demo-fixtures reference: exact users/groups/hosts for a consistent homelab/small-business demo dataset, so future screenshot passes only need to re-capture pages whose UI actually changed.
+- `docs/screenshots.md` (new) — the screenshot-capture workflow, including two gotchas hit while building it: a stale-browser-cache issue with `app.modal.js`, and never touching a login form that autofills a real saved credential.
+- `bootstrap/seed-demo-users.sh` (new) — idempotent script seeding the fixtures.md user/group list via direct LDAP writes matching the app's own schema.
+
 ## [v1.44.0] - 2026-08-06
 
 Rolls up **sso-manager-node v1.30.1**.

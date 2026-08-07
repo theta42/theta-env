@@ -44,29 +44,40 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 - ⏳ **Phases 2-5**: Pending (see [roadmap](#)).
 
 ```
-            ┌──────────────────────────────────────────────┐
-            │  your browser / apps                          │
-            └───────────────┬──────────────────────────────┘
-                            │ https
-                  ┌─────────▼─────────┐
-                  │  proxy            │  OpenResty :80/:443/:4443
-                  │  (OIDC + LDAP)    │  mgmt app :3000 (localhost)
-                  └─────────┬─────────┘  bundled redis
-              ┌─────────────┼──────────────────────┐
-              │ ldaps:636   │ http:3001 (internal)│  OIDC token/userinfo
-              ▼             ▼                      │
-      ┌──────────────────────────┐                │
-      │  sso-manager             │◄────────────────┘
-      │  OIDC provider + OpenLDAP │  bundled redis
-      │  web UI :3001 (localhost) │
-      │  ldaps :636 (LAN clients) │
-      └───────────────────────────┘
+          ┌──────────────────────────────────────────────────────────┐
+          │ browser / OIDC apps │ SSH clients │ Linux hosts            │
+          │                     │             │ (PAM/SSSD, sudo, keys)  │
+          └────────┬────────────┴──────┬──────┴───────────┬───────────┘
+            https (:443)          ssh (:2222)        ldaps (:636)
+                  │                     │                  │
+         ┌────────▼────────┐  ┌──────────▼────────┐         │
+         │  proxy           │  │  jump-host        │         │
+         │  OpenResty       │  │  sshd :2222       │         │
+         │  :80/:443/:4443  │  │  web UI :3002     │         │
+         │  mgmt app :3000  │  └────────┬──────────┘         │
+         └────────┬─────────┘           │ OIDC + LDAP        │
+                  │ http:3001 (internal)│ via sso-manager    │
+                  ▼                     ▼                    ▼
+        ┌───────────────────────────────────────────────────────┐
+        │  sso-manager   (Express + OpenLDAP + Redis)            │
+        │  OIDC provider + LDAP directory                         │
+        │  web UI :3001 (internal)   ldaps :636 (published)       │
+        └───────────────────────────────────────────────────────┘
+                          ▲  loads secrets at boot (scoped token each)
+              ┌───────────┴───────────────────┐
+              │  openbao   (KV-v2 at secret/)  │  ← central secrets store
+              │  :8200 (internal)             │     per-user + per-app KV
+              │  :8080 (operator UI/API)     │
+              └───────────────────────────────┘
 ```
 
-The proxy fronts the SSO Manager UI under TLS and protects it with OIDC login.
-It is **both** an OIDC client of the SSO (for login) **and** a direct LDAP
-client (for user lookups). Legacy apps can still bind to LDAPS on the SSO
-directly.
+The proxy fronts the SSO Manager UI (and the jump-host web UI) under TLS and
+protects them with OIDC login. It is **both** an OIDC client of the SSO (for
+login) **and** a direct LDAP client (for user lookups). Legacy apps can still
+bind to LDAPS on the SSO directly. See
+[docs/architecture.md](docs/architecture.md) for the full diagram (ports,
+secrets flow, jump-host, ldap-client) and [docs/secrets.md](docs/secrets.md)
+for the OpenBao model.
 
 - **Self-service API tokens** in both apps' UIs, for scripting/CI without a browser session.
 - **Multi-Site Support (Geo-Location Scaling)** — built-in support for N-Way Multi-Master LDAP replication across physical locations.
@@ -273,17 +284,19 @@ for details.
 
 ## Logs
 
-The stack runs under Docker Compose with two services — `sso-manager` and
-`proxy`. Both the Node app and, for the SSO, OpenLDAP write to the container's
-stdout/stderr, so `docker compose logs` is the primary view.
+The stack runs under Docker Compose with several services — `sso-manager`,
+`proxy`, `jump-host`, and `openbao` (plus its `bao-renewer` sidecar). Both the
+Node app and, for the SSO, OpenLDAP write to the container's stdout/stderr, so
+`docker compose logs` is the primary view.
 
 ```bash
-# Follow both services live
+# Follow all services live
 docker compose logs -f
 
 # One service
 docker compose logs -f sso-manager
 docker compose logs -f proxy
+docker compose logs -f jump-host
 
 # Last 200 lines and keep following
 docker compose logs --tail=200 -f proxy
@@ -473,12 +486,15 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 theta-suite/
 ├── setup.env.example   # first-run config template — cp to setup.env, set CFG_DOMAIN
 ├── config.example/      # committed annotated config templates (copy to ./config/)
-├── docker-compose.yml   # sso-manager + proxy on one bridge net
+├── docker-compose.yml   # sso-manager + proxy + jump-host + openbao on one bridge net
 ├── setup.sh             # one-command idempotent bring-up (manages ./config/ + backups)
 ├── bootstrap/
 │   └── bootstrap.js      # runs in the sso-manager container
 ├── sso-manager-node/    # git submodule
-└── proxy/               # git submodule
+├── proxy/               # git submodule
+├── jump-host/           # git submodule
+├── ldap-client/         # git submodule (enrolls Linux hosts; also the opt-in ldap-test-host fixture)
+└── theta-agent/         # git submodule
 ```
 
 `./setup.sh` reads the gitignored `setup.env` on first run to generate the
