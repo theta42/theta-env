@@ -78,10 +78,13 @@ die()   { error "$*"; exit 1; }
 # (stale policies/tokens causing vault 403s). The Redis vault-token cache is
 # flushed once sso-manager is back up (see the OpenBao bootstrap section).
 RESET_OPENBAO=0
+SEED_NODE_SECRET=0
+SEED_NODE_ARGS=()
 for arg in "$@"; do
 	case "$arg" in
 		--reset-openbao) RESET_OPENBAO=1 ;;
-		*) warn "unknown argument: $arg (ignored)" ;;
+		--seed-node-secret) SEED_NODE_SECRET=1 ;;
+		*) if [[ "$SEED_NODE_SECRET" == 1 ]]; then SEED_NODE_ARGS+=("$arg"); else warn "unknown argument: $arg (ignored)"; fi ;;
 	esac
 done
 
@@ -878,6 +881,29 @@ seed_app_conf() {
 		|| warn "  could not seed secret/${vault_path} (continuing — app will use its file fallback)"
 }
 
+# Seed a node-scoped secret for a theta-agent (DESIGN.md §5). Node secrets live
+# at secret/data/nodes/<agent-id>/* and are read by the agent (via the SSO's
+# /api/v1/agent/secrets) on behalf of 3rd-party apps on the host. Agent ids are
+# minted at enrollment, so this is a helper the operator calls per node, not a
+# boot-time seed:
+#   ./setup.sh --seed-node-secret <agent-id> <name> <key>=<value> [<key>=<value>...]
+seed_node_conf() {
+	local agent_id="$1" name="$2"; shift 2
+	[[ -n "$agent_id" && -n "$name" ]] || die "seed_node_conf: need <agent-id> <name>"
+	# CLI paths are mount-relative (no "data/" segment -- the CLI inserts that
+	# itself for KV v2, same as seed_app_conf's "secret/${vault_path}" above).
+	# The HTTP API path api_agent_ops.js checks against (secret/data/nodes/...)
+	# is what this resolves to underneath.
+	local path="secret/nodes/${agent_id}/${name}"
+	if bao_run kv get "$path" >/dev/null 2>&1; then
+		info "  ${path} already seeded — keeping."
+		return 0
+	fi
+	info "Seeding ${path}..."
+	docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao kv put "$path" "$@" >/dev/null \
+		|| die "failed to seed ${path}"
+}
+
 info "Configuring OpenBao policies..."
 # sso-broker — sso's authority to read/write its own conf, mint per-user and
 # per-app tokens (auth/token/create/sso-broker), and create the matching
@@ -900,6 +926,11 @@ path "secret/metadata/plugins/*" { capabilities = ["list", "read", "delete"] }
 # a key that changes on every boot makes signature verification meaningless.
 path "secret/data/agent/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/agent/*" { capabilities = ["list", "read", "delete"] }
+# Node-scoped secrets for theta-agent (DESIGN.md §5): each node reads only its
+# own secret/data/nodes/<agent-id>/* subtree via the SSO's /api/v1/agent/secrets
+# endpoint. The SSO (sso-broker) must be able to read them on the agent's behalf.
+path "secret/data/nodes/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/nodes/*" { capabilities = ["list", "read", "delete"] }
 path "auth/token/create/sso-broker" { capabilities = ["update"] }
 path "auth/token/create/sso-app" { capabilities = ["update"] }
 path "auth/token/renew-accessor" { capabilities = ["update"] }
@@ -979,6 +1010,13 @@ info "OpenBao secrets configured:"
 info "  policies:    sso-broker, sso-admin, proxy, jump-host (+ per-user/app created lazily by sso)"
 info "  token roles: sso-broker (user-*/app-*/sso-admin, 24h period), sso-app (app-*, 768h period), theta-svc (service tokens, 768h period)"
 info "  app tokens:  SSO_VAULT_TOKEN, PROXY_VAULT_TOKEN, JUMP_VAULT_TOKEN in .env (periodic; renewed by bao-renewer)"
+
+# --seed-node-secret <agent-id> <name> <key>=<value>... : seed a node-scoped
+# secret for a theta-agent (DESIGN.md §5). Runs after OpenBao is configured so
+# the sso-broker policy (which grants secret/data/nodes/*) is in place.
+if [[ "$SEED_NODE_SECRET" == 1 ]]; then
+	seed_node_conf "${SEED_NODE_ARGS[@]}"
+fi
 
 # bao-renewer: renews the three periodic service tokens every 12h so they never
 # hit their period boundary while the stack is running. Recreated (not just
