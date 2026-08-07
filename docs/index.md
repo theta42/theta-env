@@ -4,24 +4,28 @@ title: Home
 description: A unified, one-command SSO Manager + OIDC proxy stack for home labs and small businesses. Wires together a self-hosted identity provider and a reverse proxy with one setup.sh.
 ---
 
-# theta-suite
+# Theta suite
 
-The whole theta42 identity, access, and secrets stack in one repo, brought up
-with a single command — for home labs and small businesses.
+Theta Suite is your one-line solution to replacing fragmented, hard-to-wire
+authentication setups with a unified security stack. It wires together OIDC
+authentication, LDAP user directories, automated host enrollment, and
+centralized secret management in a single command. It eliminates the manual
+configuration friction so you get secure access, auditability, and multi-site
+replication running in seconds.
 
-It composes four applications around a shared secrets store:
-[SSO Manager](https://theta42.github.io/sso-manager-node/) (OIDC provider +
-LDAP directory), [Proxy](https://theta42.github.io/proxy/) (an OIDC-protected
-reverse proxy that can also look users up directly in LDAP),
-[Jump Host](https://theta42.github.io/jump-host/) (directory-driven SSH access
-through one public entry point), and
-[ldap-client](https://theta42.github.io/ldap-client/) (enrolls your Linux
-hosts into the directory for PAM/SSSD, sudo, and SSH keys). All of them read
-their secrets at boot from [OpenBao](https://openbao.org/), the central secrets
-store. `setup.sh` automates the fiddly part: registering the proxy as an OIDC
-client of the SSO, pointing every component at the right LDAP directory and
-the OpenBao token it needs, and generating hostnames and secrets from one
-`setup.env`.
+##  Who This Is For
+* **Self-Hosters & Homelab Engineers:** Anyone running local bare metal,
+  Proxmox, or private VPS nodes who wants enterprise-grade OIDC, multi-master
+  LDAP, PAM/SSSD host enrollment, and OpenBao secret management without spending
+  days manually wiring glue code.
+* **Small-to-Medium Businesses (SMBs):** Infrastructure teams that need a
+  unified, directory-driven access plane across both web apps and Linux boxes,
+  but want to bypass per-user SaaS taxes (Okta, Azure AD) and cloud vendor
+  lock-in.
+* **DevOps & Systems Operators:** Engineers who value idempotent, single-command
+  deployments (`./setup.sh`) and need a production-grade baseline supporting
+  zero-trust proxying, SSH jump-host access control, and multi-site replication
+  out of the box.
 
 ## Screenshots
 
@@ -33,41 +37,49 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 
 *(click either screenshot to view full size)*
 
-## Why this over running them separately
-
-The components are designed to integrate — they're only useful together once
-the proxy is registered as an OIDC client of the SSO *and* pointed at the
-SSO's LDAP directory — and the domain has to match across half a dozen config
-fields, or logins silently fail. Doing that by hand is fiddly. `setup.sh`
-asks for your domain once, generates both apps' config with it filled in
-everywhere, registers the proxy as an OIDC client automatically, and
-snapshots state before every rebuild.
-
 ## What you get
 
-- **SSO Manager**, fronted by the proxy under TLS — manage users, groups,
-  and OAuth clients.
-- **Proxy** — add the hosts you want to protect with OIDC login.
-- **LDAPS** for direct binds — Linux hosts (PAM/SSSD, sudo, SSH keys) and
-  LDAP-native apps authenticate against the same directory.
-- **Hierarchical groups & permissions** — every adopted host and app gets its own
-  `admin`/`access`/`capability` groups, generated from the Directory; they double
-  as real POSIX groups for sudo/SSH. See
-  [Group & Permission Model](GROUPS.html).
-- **ldap-client** — enroll Linux hosts into the directory (PAM/SSSD login,
-  sudo, SSH keys); the host inventory shows up in the SSO UI and drives
-  jump-host routing.
-- **SSH Jump Host** — `ssh uid_-_host@jump.<domain>` (WinSCP-friendly)
-  or an interactive picker; access is driven by directory group membership, with
-  a web UI for audit + metrics.
-- **Central secrets (OpenBao)** — every component loads its secrets from one
-  [OpenBao](https://openbao.org/) instance at boot; each user gets personal
-  secret storage, and admins mint scoped tokens for external apps. See
+- **Unified SSO Manager**: An OpenID Connect (OIDC) provider and OAuth 2.0
+  authorization server fronted by TLS. Includes a web dashboard for managing
+  users, groups, and OAuth apps, plus automated invitation and password reset
+  flows.
+- **Identity-Aware Reverse Proxy**: Intercepts HTTP/HTTPS traffic to protect
+  upstream applications with OIDC login and direct LDAP group authorization,
+  featuring automatic TLS certificate issuance and automated host routing.
+- **Embedded LDAPS Directory**: A bundled OpenLDAP core acting as your single
+  source of truth for POSIX accounts, SSH public keys, and sudo roles. Native
+  apps, legacy infrastructure, and Linux machines authenticate directly over
+  encrypted LDAPS (port 636) or StartTLS.
+- **Hierarchical Directory Group & Permission Model**: Every adopted application
+  and machine automatically inherits dedicated `admin`, `access`, and
+  `capability` groups generated directly from the LDAP directory. These map
+  cleanly to real POSIX groups for fine-grained sudo and SSH privilege controls. 
+  See [Group & Permission Model](GROUPS.html).
+- **Automated Linux Host Enrollment (ldap-client)**: A lightweight host agent
+  that enrolls Linux machines into the central directory. It configures system
+  PAM/SSSD for login, applies sudo policies, distributes SSH public keys, and
+  registers host telemetry in the primary inventory dashboard.
+- **Directory-Driven SSH Jump Host**: A centralized bastion host that routes
+  inbound terminal traffic (`ssh uid_-_host@jump.<domain>`) using active
+    directory group memberships. Supports WinSCP, file transfers, interactive
+    host pickers, and a dedicated audit interface for tracking user sessions and
+    connection metrics.
+- **Central Secrets Engine (OpenBao integration)**: Bootstraps every component
+  against an embedded [OpenBao](https://openbao.org/) instance to load tokens
+  and cryptographic keys at runtime. Provides per-user secret vaults and enables
+  administrators to mint scoped API tokens for external services. See
   [Secrets](secrets.html).
-- **Self-service API tokens** in both apps' UIs, for scripting/CI without a
-  browser session.
-- **Multi-Site Support (Geo-Location Scaling)** — built-in support for N-Way Multi-Master LDAP replication across physical locations.
-- **Multi-target load balancing** — built-in proxy support for round-robin load balancing across multiple application servers.
+- **Self-Service & CI/CD API Tokens**: Granular, personal access token
+  management built directly into the web interface, allowing operators to drive
+  system administration and automation pipelines programmatically without an
+  active browser session.
+- **Multi-Site Geo-Replication**: Built-in support for N-Way Multi-Master LDAP
+  replication, allowing directory states to sync across geographically separated
+  physical hardware or remote data centers for high availability and low-latency
+  local reads.
+- **Multi-Target Load Balancing**: Native reverse-proxy load balancing that
+  distributes traffic across multiple application backends using customizable
+  health checks and round-robin strategies.
 
 ## Get it
 
