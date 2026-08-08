@@ -60,12 +60,48 @@ never passed to a service container.
 
 | Policy | Capabilities | Held by |
 |---|---|---|
-| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`, `secret/agent/*`; `update` on `auth/token/create/sso-broker` + `create/sso-app` and `auth/token/renew-accessor`/`revoke-accessor`/`lookup-accessor`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
+| `sso-broker` | read/write `secret/sso-manager/conf`, `secret/users/*`, `secret/apps/*`, `secret/plugins/*`, `secret/agent/*`, `secret/data/resources/*`, `secret/metadata/resources/*`; `update` on `auth/token/create/sso-broker` + `create/sso-app` and `auth/token/renew-accessor`/`revoke-accessor`/`lookup-accessor`; `update` on `sys/policies/acl/user-*`, `app-*`, `sso-admin` | SSO (`SSO_VAULT_TOKEN`) |
 | `sso-admin` | read/write/list all of `secret/*` | admin UI sessions (minted by the broker) |
 | `proxy` | read `secret/proxy/conf` | proxy (`PROXY_VAULT_TOKEN`) |
 | `jump-host` | read `secret/jump-host/conf` | jump host (`JUMP_VAULT_TOKEN`) |
 | `user-<uid>` | read/write `secret/users/<uid>/*` | per-user tokens (minted lazily by the broker) |
 | `app-<name>` | read/write `secret/apps/<name>/*` | per-external-app tokens (minted by an admin) |
+
+## Resource Secrets & Zero-View Security Model
+
+Directory resources (Services, Hosts, Containers, Sites) manage their application secrets at `secret/data/resources/<resource_slug>/conf` in OpenBao KV-v2.
+
+### 1. Zero-View Security Model
+* **API Metadata Only**: `GET /api/directory-admin/resources/:id/secrets` returns key names and metadata (`hasValue: true`, `isInherited: true`, `parentSlug`), but **NEVER returns raw secret values**.
+* **Browser Isolation**: Secret values are never exposed in HTML DOM templates, JSON admin APIs, or browser dev tools.
+* **Agent-Exclusive Delivery**: Raw secret values are fetched exclusively over TLS by authenticated `theta-agent` instances using machine authorization tokens (`POST /api/v1/agent/secrets`).
+
+### 2. Multi-Level Hierarchy Secret Inheritance
+Resources inherit secrets across any level of the directory hierarchy (`Services / Apps → Hosts / Nodes → Global Sites`):
+* An inherited secret reference is stored as `INHERIT:<parent_slug>:<parent_key>` (or `INHERIT:<key>`).
+* When requested by `theta-agent`, SSO Manager resolves the inheritance chain dynamically, fetching the final secret value from the parent Site or Host's OpenBao store.
+
+### 3. Key Validation & Generator
+* **Key Format**: Secret keys are strictly validated against `^[A-Za-z0-9_]+$` (Standard Environment Variable format, e.g. `DB_PASSWORD`).
+* **Cryptographic Generator**: The UI includes a client-side cryptographic secret generator (`window.crypto.getRandomValues`) with length choices from 8 to 128 characters. Populating the input field displays an inline security warning notifying operators to save immediately before values are hidden.
+
+## On-Demand CLI Secret Delivery (`theta-agent get-secret`)
+
+`theta-agent` delivers secrets on demand directly to local processes, shell scripts, Systemd services, and Docker containers without writing plaintext secret files to disk.
+
+```bash
+# Fetch single raw secret value (stdout, no trailing newline):
+theta-agent get-secret DB_PASSWORD
+
+# Assign directly to shell environment variables:
+export DB_PASSWORD=$(theta-agent get-secret DB_PASSWORD)
+
+# Export all host/resource secrets for Systemd EnvironmentFile:
+theta-agent get-secrets --env
+
+# Format all secrets as JSON for automation scripts:
+theta-agent get-secrets --json
+```
 
 **Token roles** — three, all orphan + renewable:
 
