@@ -8,48 +8,9 @@ description: theta-suite's central secrets architecture — OpenBao as the singl
 
 theta-suite keeps **every secret in one place: [OpenBao](https://openbao.org/)**
 (a Vault-community fork), running on the `theta-net` docker network at
-`http://openbao:8200`. The three apps (SSO Manager, proxy, jump host) load
-their boot secrets from it; end users get personal per-user secret storage
-through the SSO UI; and external apps get scoped, self-contained access to
-their own namespace.
-
-This page is the operator reference. For the package API, see
-[@simpleworkjs/bao-conf](https://simpleworkjs.github.io/bao-conf/).
-
-## Why a central store
-
-Before this, secret handling was partial and inconsistent: only the SSO read
-one path from OpenBao; the proxy and jump host read bind-mounted
-`./config/*-secrets.js` files; the bootstrap wrote generated OAuth creds to
-those files on disk; and the SSO `/api/vault` UI was an ungated, broken
-pass-through. Centralising on OpenBao gives every app the same fail-soft load
-path, makes per-user secret storage possible, and lets external apps get
-least-privilege access without anyone handing them the root token.
-
-## The load path (every app)
-
-1. `@simpleworkjs/conf` **synchronously** loads the bind-mounted
-   `./config/<app>-secrets.js` at require time — the file is the operator-edit
-   layer and the fail-soft fallback.
-2. `@simpleworkjs/bao-conf`'s `init({ path: '<app>', conf })` **deep-merges**
-   `secret/data/<app>/conf` from OpenBao over the live `conf` object. It is
-   **fail-soft**: if OpenBao is unreachable or the path is absent, boot
-   continues with the file-loaded config.
-3. A few secrets are **captured at require time** (notably the OIDC
-   `clientSecret`, consumed inside `createOidcClient` during
-   `require('../models')`). So `init()` must resolve *before* that
-   `require()`. Each app's `bin/www` handles this:
-   - **proxy** — defers `require('../app')` (which transitively loads models)
-     behind `bao-conf.init()`.
-   - **jump host** — gates the explicit `require('../models')` behind
-     `bao-conf.init()`.
-   - **SSO** — swaps the old `conf_manager.init()` call (same position in its
-     existing `.then()` boot chain) for `bao-conf.init()`; nothing in the SSO
-     captures a secret at require time, so no reordering was needed.
-
-`VAULT_TOKEN` (a scoped per-app token, **not** the root token) and
-`VAULT_ADDR=http://openbao:8200` are passed to each container via
-`docker-compose.yml`. The `./config/*-secrets.js` mounts stay as the fallback.
+`http://openbao:8200`. The SSO Manager acts as management and abstraction point
+for secrets management. Via the directory, secrets can be set, cycled, revoked
+or inherited. **You are not meant to interact with opanBoa directly.**
 
 ## Policies, token role, and tokens
 
@@ -72,22 +33,37 @@ never passed to a service container.
 Directory resources (Services, Hosts, Containers, Sites) manage their application secrets at `secret/data/resources/<resource_slug>/conf` in OpenBao KV-v2.
 
 ### 1. Zero-View Security Model
-* **API Metadata Only**: `GET /api/directory-admin/resources/:id/secrets` returns key names and metadata (`hasValue: true`, `isInherited: true`, `parentSlug`), but **NEVER returns raw secret values**.
-* **Browser Isolation**: Secret values are never exposed in HTML DOM templates, JSON admin APIs, or browser dev tools.
-* **Agent-Exclusive Delivery**: Raw secret values are fetched exclusively over TLS by authenticated `theta-agent` instances using machine authorization tokens (`POST /api/v1/agent/secrets`).
+* **API Metadata Only**: `GET /api/directory-admin/resources/:id/secrets` returns
+  key names and metadata (`hasValue: true`, `isInherited: true`, `parentSlug`),
+  but **NEVER returns raw secret values**.
+* **Browser Isolation**: Secret values are never exposed in HTML DOM templates,
+  JSON admin APIs, or browser dev tools.
+* **Agent-Exclusive Delivery**: Raw secret values are fetched exclusively over
+  TLS by authenticated `theta-agent` instances using machine authorization tokens
+  (`POST /api/v1/agent/secrets`).
 
 ### 2. Multi-Level Hierarchy Secret Inheritance
-Resources inherit secrets across any level of the directory hierarchy (`Services / Apps → Hosts / Nodes → Global Sites`):
-* An inherited secret reference is stored as `INHERIT:<parent_slug>:<parent_key>` (or `INHERIT:<key>`).
-* When requested by `theta-agent`, SSO Manager resolves the inheritance chain dynamically, fetching the final secret value from the parent Site or Host's OpenBao store.
+Resources inherit secrets across any level of the directory hierarchy
+(`Services / Apps → Hosts / Nodes → Global Sites`):
+* An inherited secret reference is stored as `INHERIT:<parent_slug>:<parent_key>`
+  (or `INHERIT:<key>`).
+* When requested by `theta-agent`, SSO Manager resolves the inheritance chain
+dynamically, fetching the final secret value from the parent Site or Host's
+OpenBao store.
 
 ### 3. Key Validation & Generator
-* **Key Format**: Secret keys are strictly validated against `^[A-Za-z0-9_]+$` (Standard Environment Variable format, e.g. `DB_PASSWORD`).
-* **Cryptographic Generator**: The UI includes a client-side cryptographic secret generator (`window.crypto.getRandomValues`) with length choices from 8 to 128 characters. Populating the input field displays an inline security warning notifying operators to save immediately before values are hidden.
+* **Key Format**: Secret keys are strictly validated against `^[A-Za-z0-9_]+$`
+(Standard Environment Variable format, e.g. `DB_PASSWORD`).
+* **Cryptographic Generator**: The UI includes a client-side cryptographic
+secret generator (`window.crypto.getRandomValues`) with length choices from 8 to
+128 characters. Populating the input field displays an inline security warning
+notifying operators to save immediately before values are hidden.
 
 ## On-Demand CLI Secret Delivery (`theta-agent get-secret`)
 
-`theta-agent` delivers secrets on demand directly to local processes, shell scripts, Systemd services, and Docker containers without writing plaintext secret files to disk.
+`theta-agent` delivers secrets on demand directly to local processes, shell
+scripts, Systemd services, and Docker containers without writing plaintext
+secret files to disk.
 
 ```bash
 # Fetch single raw secret value (stdout, no trailing newline):
