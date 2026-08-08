@@ -8,6 +8,17 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.46.0] - 2026-08-07
+
+Rolls up **theta-agent v1.6.0**, **sso-manager-node v1.31.0**, **jump-host v1.19.1**.
+
+### Added
+- **On-demand CLI Secret Fetching.** `theta-agent get-secret <key>` and `theta-agent get-secrets [--env|--json]` for dynamic secret resolution without plaintext files on disk.
+- **Resource Secrets Engine & Zero-View Security.** OpenBao KV-v2 encrypted secrets for directory resources with strict regex validation (`^[A-Za-z0-9_]+$`), password generator, and multi-level hierarchy secret inheritance.
+- **OpenBao `sso-broker` Policy.** Granted `secret/data/resources/*` and `secret/metadata/resources/*` permissions to `sso-broker`.
+- **Zero-Trust LDAP WebSocket Tunnel.** Auto-starts local `/run/theta/ldap.sock` and `127.0.0.1:3890` loopback listeners on managed nodes.
+- **Agent Self-Update & Service Control.** Added `theta-agent update` and `theta-agent reinitialize` CLI commands with automated service restarts (`sssd`, `sshd`).
+
 ## [v1.45.0] - 2026-08-06
 
 Rolls up **sso-manager-node v1.30.2**, **proxy v1.35.1**, **jump-host v1.19.1**.

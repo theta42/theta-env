@@ -929,6 +929,8 @@ path "secret/metadata/agent/*" { capabilities = ["list", "read", "delete"] }
 # Node-scoped secrets for theta-agent (DESIGN.md §5): each node reads only its
 # own secret/data/nodes/<agent-id>/* subtree via the SSO's /api/v1/agent/secrets
 # endpoint. The SSO (sso-broker) must be able to read them on the agent's behalf.
+path "secret/data/resources/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "secret/metadata/resources/*" { capabilities = ["list", "read", "delete"] }
 path "secret/data/nodes/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "secret/metadata/nodes/*" { capabilities = ["list", "read", "delete"] }
 path "auth/token/create/sso-broker" { capabilities = ["update"] }
