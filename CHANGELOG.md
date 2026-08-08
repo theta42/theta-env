@@ -8,6 +8,22 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.47.0] - 2026-08-08
+
+Rolls up **sso-manager-node v1.32.0**, **theta-agent v1.7.0**, **proxy v1.35.1**, **jump-host v1.19.1**.
+
+### Added
+- **Subtype Management & Metrics Drivers Architecture.** Implemented a 4-tier resolution engine (`services/driver_registry.js`) binding resource `subType` metadata (`systemd`, `docker`, `proxmox`, `wireguard`, `postgresql`, `redis`, `unifi`, `k8s`) to operational telemetry, log streaming, and remote lifecycle control.
+- **Explicit Secret Inheritance Mode.** Enforced strict upward ancestor lineage (`Resource -> Host -> Cluster -> Site`) for secret inheritance with explicit pointer resolution (`INHERIT:<parentSlug>:<parentKey>`).
+- **Cross-Platform Theta Agent Binaries.** Compiled native zero-dependency Go binaries for **Linux (amd64, arm64, armv7)**, **Windows (amd64, arm64)**, and **macOS (Intel, Apple Silicon M1/M2/M3/M4)**.
+- **Consolidated External App Tokens.** Relocated external OpenBao App Token minting into the **Configuration** page (`/conf` -> External App Tokens tab) and deprecated standalone `/vault` navigation item.
+- **Multi-Secret Support.** Supported multiple secret keys per resource in OpenBao `secret/data/resources/<slug>/conf` with per-key merging and deletion.
+- **Automated Integration Testing.** Fixed `test-integration.sh` to use modern `docker compose` syntax and added driver test coverage.
+
+### Fixed
+- **Ancestry Lineage Querying.** Fixed `Resource.findAllAncestors(id)` memory filtering over `ResourceEdge.list()` to resolve deep ancestor lineage across all graph depths.
+- **Dockerfile Driver Staging.** Added `COPY nodejs/drivers ./drivers` to `Dockerfile.openldap` and `Dockerfile.test-runner` for clean container execution.
+
 ## [v1.46.0] - 2026-08-07
 
 Rolls up **theta-agent v1.6.0**, **sso-manager-node v1.31.0**, **jump-host v1.19.1**.

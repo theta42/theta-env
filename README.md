@@ -77,6 +77,8 @@ secrets flow, jump-host, ldap-client) and [docs/secrets.md](docs/secrets.md)
 for the OpenBao model.
 
 - **Self-service API tokens** in both apps' UIs, for scripting/CI without a browser session.
+- **Subtype Management & Metrics Drivers Engine** — 4-tier resolution engine (`theta-agent`, specialized subtype driver, Proxmox hypervisor fallback, unmanaged) for systemd, docker, proxmox, wireguard, database, and k8s resources.
+- **Explicit Secret Inheritance Mode** — OpenBao KV-v2 integration with strict upward ancestor lineage (`Resource -> Host -> Cluster -> Site`), guaranteeing strict secret scoping across services and containers.
 - **Multi-Site Support (Geo-Location Scaling)** — built-in support for N-Way Multi-Master LDAP replication across physical locations.
 - **Multi-target load balancing** — built-in proxy support for round-robin load balancing across multiple application servers.
 

@@ -938,9 +938,10 @@ path "auth/token/create/sso-app" { capabilities = ["update"] }
 path "auth/token/renew-accessor" { capabilities = ["update"] }
 path "auth/token/revoke-accessor" { capabilities = ["update"] }
 path "auth/token/lookup-accessor" { capabilities = ["update"] }
-path "sys/policies/acl/user-*" { capabilities = ["create", "read", "update", "delete", "list"] }
-path "sys/policies/acl/app-*" { capabilities = ["create", "read", "update", "delete", "list"] }
-path "sys/policies/acl/sso-admin" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/policies/acl/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/policies/acl" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/policy/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/policy" { capabilities = ["create", "read", "update", "delete", "list"] }
 HCL
 # sso-admin — admin users in the vault UI: read/write/list everything under secret/.
 # The bare `secret/metadata` grant lets an admin LIST the KV mount root (the
